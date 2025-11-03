@@ -74,18 +74,26 @@
     </div>
 
     <!-- Carga de Leaflet CSS y JS (Librería de Mapas) -->
-    <!-- MOVIMIENTO CRÍTICO: Mover los scripts de Leaflet aquí, antes del script principal, asegura que la variable L esté definida. -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20n63W4ai0B8n7zL8dE5P5wzJbuvjt+YF6r7o/qBCV0=" crossorigin=""></script>
     
     <!-- Script Principal de la Aplicación y Lógica del Mapa -->
-    <script>
+    <script type="module">
+        // Importaciones de Firebase (solución robusta para evitar "Script error" y usar ES Modules)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
         let map;
         let originMarker;
         let destinationMarker;
         let currentPosition = null;
         let destinationCoords = null;
         let destinationAddress = '';
+
+        // Global Firebase instances
+        let db = null;
+        let auth = null;
 
         // Función para mostrar mensajes de estado
         function displayMessage(message, type = 'info') {
@@ -113,51 +121,31 @@
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        let db = null;
-        let auth = null;
-
-        // Carga de Firebase SDKs
-        const loadScript = (src) => new Promise(resolve => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            document.head.appendChild(script);
-        });
-
-        const loadFirebase = async () => {
-            await Promise.all([
-                loadScript("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"),
-                loadScript("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"),
-                loadScript("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js")
-            ]);
-
-            if (window.firebase && firebaseConfig) {
-                const { initializeApp } = window.firebase;
-                const { getFirestore, collection, addDoc } = window.firebase.firestore;
-                const { getAuth, signInAnonymously, signInWithCustomToken } = window.firebase.auth;
-
+        // Nueva función de inicialización usando imports de módulos
+        const initializeFirebase = async () => {
+            if (!firebaseConfig) {
+                displayMessage("Error: No se encontró la configuración de Firebase.", 'error');
+                return;
+            }
+            
+            try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
                 // Autenticación
                 if (initialAuthToken) {
-                    try {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                        console.log("Firebase Auth: Usuario autenticado con token.");
-                    } catch (error) {
-                        console.error("Firebase Auth Error con token:", error);
-                        await signInAnonymously(auth);
-                        console.log("Firebase Auth: Fallback a Anónimo.");
-                    }
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    console.log("Firebase Auth: Usuario autenticado con token.");
                 } else {
                     await signInAnonymously(auth);
                     console.log("Firebase Auth: Sesión Anónima iniciada.");
                 }
 
                 displayMessage("Mapa interactivo y servicios de pedido listos.", 'success');
-            } else {
-                displayMessage("Error: No se encontró la configuración de Firebase.", 'error');
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                displayMessage("Error fatal al inicializar Firebase.", 'error');
             }
         };
 
@@ -300,8 +288,21 @@
         // Inicialización y Manejadores de Eventos
         document.addEventListener('DOMContentLoaded', () => {
             // Cargar Firebase antes de cualquier interacción de guardado
-            loadFirebase();
-            initMap();
+            initializeFirebase();
+
+            // Lógica para asegurar que Leaflet esté completamente cargado (L.map exista)
+            function checkAndInitMap() {
+                if (typeof L !== 'undefined' && typeof L.map === 'function') {
+                    initMap();
+                    console.log("Leaflet/Mapa inicializado correctamente.");
+                } else {
+                    // Reintentar en un ciclo de eventos posterior si L.map no está listo.
+                    console.log("Esperando a que Leaflet termine de cargar...");
+                    setTimeout(checkAndInitMap, 50); 
+                }
+            }
+            
+            checkAndInitMap(); // Iniciar la verificación
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
