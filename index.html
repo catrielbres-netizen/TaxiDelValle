@@ -153,7 +153,6 @@
 
                 console.log("Firebase: Inicialización exitosa.");
                 isFirebaseReady = true;
-                // Dejamos el mensaje de cargando hasta que el mapa inicie
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
                 displayMessage("⚠️ Error al conectar la base de datos. Pedidos deshabilitados.", 'error');
@@ -197,6 +196,9 @@
             // Usamos un centro de mapa para Neuquén, Argentina por defecto
             map = L.map('map').setView([-38.9517, -68.0617], 13); 
             window.map = map;
+
+            // CRÍTICO: Invalida el tamaño inmediatamente para forzar el redibujo.
+            map.invalidateSize({ pan: false }); 
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
@@ -263,7 +265,6 @@
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`;
             
             try {
-                // Usar un User-Agent específico es necesario para algunas APIs de geocodificación
                 const response = await fetch(url, { headers: { 'User-Agent': 'TaxiDelValleApp' } });
                 const data = await response.json();
                 const address = data.display_name || `Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`;
@@ -305,33 +306,30 @@
                 // Este check asegura que la librería Leaflet haya cargado
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     
-                    initMap();
-                    console.log("Leaflet: Mapa creado. Iniciando bucle de forzado de tamaño...");
+                    initMap(); // <-- Llama inmediatamente a initMap()
 
-                    // CRÍTICO: Bucle de invalidación forzada con requestAnimationFrame (el último recurso)
+                    // Bucle de invalidación forzada con requestAnimationFrame
                     let attempts = 0;
                     const maxAttempts = 100; 
                     const mapElement = document.getElementById('map');
 
                     const forceResize = () => {
                         if (map && attempts < maxAttempts) {
-                            map.invalidateSize({ pan: false });
-                            
+                            // Verificamos si el contenedor ya tiene un tamaño visible
                             if (mapElement && mapElement.offsetWidth > 0 && mapElement.offsetHeight > 0) {
+                                map.invalidateSize({ pan: false });
                                 console.log(`Leaflet: invalidateSize() confirmado y exitoso en intento ${attempts}.`);
-                                // Se logró, terminar el bucle
+                                // Se logró, terminar el bucle aquí
                             } else {
                                 attempts++;
-                                // Si no está listo, intentar de nuevo en el próximo frame
+                                // Si no está listo, intentamos de nuevo en el próximo frame
                                 requestAnimationFrame(forceResize);
                             }
                         }
                     };
 
-                    // Damos un pequeño respiro después de initMap y luego iniciamos el bucle de resize
-                    setTimeout(() => {
-                        requestAnimationFrame(forceResize);
-                    }, 50); 
+                    // Iniciamos el bucle de resize inmediatamente después de crear el mapa.
+                    requestAnimationFrame(forceResize);
                     
                 } else {
                     // Reintenta la inicialización si la librería no está lista.
@@ -339,8 +337,8 @@
                 }
             }
             
-            // CRÍTICO - CAMBIO APLICADO: Aumentamos el retraso a 400ms.
-            setTimeout(checkAndInitMap, 400);
+            // CRÍTICO - CAMBIO APLICADO: Llamada inmediata, confiando en el bucle interno
+            checkAndInitMap();
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
