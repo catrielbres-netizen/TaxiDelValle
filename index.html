@@ -90,7 +90,8 @@
         // CRÍTICO: Corrección del "rombo" de Leaflet con Data URI (SVG simple)
         if (typeof L !== 'undefined' && L.Icon) {
             delete L.Icon.Default.prototype._getIconUrl;
-            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="1" cy="1" r="5" fill="transparent"/></svg>');
+            // Un SVG Data URI más robusto (círculo pequeño transparente) para evitar el ícono roto
+            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>');
             L.Icon.Default.mergeOptions({
                 iconUrl: dataUriSvg,
                 iconRetinaUrl: dataUriSvg,
@@ -152,7 +153,7 @@
 
                 console.log("Firebase: Inicialización exitosa.");
                 isFirebaseReady = true;
-                displayMessage("✅ Servicios de pedido listos. Cargando mapa...", 'success');
+                // Dejamos el mensaje de cargando hasta que el mapa inicie
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
                 displayMessage("⚠️ Error al conectar la base de datos. Pedidos deshabilitados.", 'error');
@@ -193,8 +194,9 @@
                 return;
             }
 
-            map = L.map('map').setView([-38.9517, -68.0617], 13); // Centrado inicial
-            window.map = map; // Hacemos el mapa global para facilitar la depuración
+            // Usamos un centro de mapa para Neuquén, Argentina por defecto
+            map = L.map('map').setView([-38.9517, -68.0617], 13); 
+            window.map = map;
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
@@ -253,12 +255,15 @@
                     updateRequestButton();
                 });
             });
+            
+            displayMessage("✅ Mapa cargado y listo. Toca el mapa para seleccionar tu destino.", 'success');
         }
 
         async function reverseGeocode(latlng, elementId, callback) {
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`;
             
             try {
+                // Usar un User-Agent específico es necesario para algunas APIs de geocodificación
                 const response = await fetch(url, { headers: { 'User-Agent': 'TaxiDelValleApp' } });
                 const data = await response.json();
                 const address = data.display_name || `Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`;
@@ -294,35 +299,36 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             initializeFirebase();
+            displayMessage("✅ Servicios de pedido listos. Cargando mapa...", 'success');
 
             function checkAndInitMap() {
+                // Este check asegura que la librería Leaflet haya cargado
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     
                     initMap();
                     console.log("Leaflet: Mapa creado. Iniciando bucle de forzado de tamaño...");
 
-                    // CRÍTICO: Bucle de invalidación forzada con requestAnimationFrame
+                    // CRÍTICO: Bucle de invalidación forzada con requestAnimationFrame (el último recurso)
                     let attempts = 0;
-                    const maxAttempts = 100; // Intentaremos hasta 100 frames
+                    const maxAttempts = 100; 
                     const mapElement = document.getElementById('map');
 
                     const forceResize = () => {
                         if (map && attempts < maxAttempts) {
                             map.invalidateSize({ pan: false });
                             
-                            // Si el contenedor ya tiene un ancho, es probable que esté bien.
                             if (mapElement && mapElement.offsetWidth > 0 && mapElement.offsetHeight > 0) {
                                 console.log(`Leaflet: invalidateSize() confirmado y exitoso en intento ${attempts}.`);
-                                // Terminamos el bucle aquí
+                                // Se logró, terminar el bucle
                             } else {
                                 attempts++;
-                                // Si no está listo, intentamos de nuevo en el próximo frame de animación
+                                // Si no está listo, intentar de nuevo en el próximo frame
                                 requestAnimationFrame(forceResize);
                             }
                         }
                     };
 
-                    // Damos un respiro inicial y luego iniciamos el bucle de resize
+                    // Damos un pequeño respiro después de initMap y luego iniciamos el bucle de resize
                     setTimeout(() => {
                         requestAnimationFrame(forceResize);
                     }, 50); 
@@ -333,9 +339,8 @@
                 }
             }
             
-            // CRÍTICO - CAMBIO APLICADO: Retrasamos la inicialización del mapa (checkAndInitMap) 
-            // 200ms para asegurar que el DOM y el CSS de la altura ya estén aplicados.
-            setTimeout(checkAndInitMap, 200);
+            // CRÍTICO - CAMBIO APLICADO: Aumentamos el retraso a 400ms.
+            setTimeout(checkAndInitMap, 400);
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
