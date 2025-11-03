@@ -10,16 +10,27 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Carga de Iconos (Lucide Icons) -->
     <script type="module">
-        import { createIcons, MapPin, LocateFixed, Car, Send, List } from 'https://unpkg.com/lucide@latest/dist/esm/lucide.js';
-        createIcons({ icons: { MapPin, LocateFixed, Car, Send, List } });
+        import { createIcons, MapPin, LocateFixed, Car, Send, List, XCircle } from 'https://unpkg.com/lucide@latest/dist/esm/lucide.js';
+        createIcons({ icons: { MapPin, LocateFixed, Car, Send, List, XCircle } });
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
         /* CRÍTICO: Aseguramos que el contenedor del mapa tenga una altura definida */
         #map { height: 65vh; width: 100%; border-radius: 0 0 1rem 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
         .leaflet-container { z-index: 1; }
-        .fab-button { transition: background-color 0.3s, transform 0.1s; }
-        .fab-button:active { transform: scale(0.95); }
+        /* Estilos para el autocompletado */
+        .suggestion-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+            transition: background-color 0.15s;
+        }
+        .suggestion-item:hover {
+            background-color: #f0f9ff;
+        }
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
     </style>
 
     <!-- CRÍTICO: CARGA DE LEAFLET CSS EN EL HEAD -->
@@ -54,23 +65,33 @@
                     <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
                         <i data-lucide="locate-fixed" class="w-5 h-5 text-indigo-600 flex-shrink-0"></i>
                         <div class="flex-grow">
-                            <label class="text-xs font-medium text-indigo-600">Origen (Recogida)</label>
-                            <p id="origin-display" class="font-semibold text-gray-800 text-sm truncate">Cargando ubicación actual...</p>
+                            <label class="text-xs font-medium text-indigo-600">Origen (Recogida) - 
+                                <span class="text-xs font-bold text-red-500">Haga clic en el mapa si falla la detección.</span>
+                            </label>
+                            <p id="origin-display" class="font-semibold text-gray-800 text-sm truncate">Esperando ubicación o clic en mapa...</p>
                         </div>
                     </div>
-                    <!-- Indicador y Campo de Destino -->
-                    <div class="flex items-center space-x-3 p-3 bg-red-50 rounded-lg border-2 border-red-200">
-                        <i data-lucide="map-pin" class="w-5 h-5 text-red-600 flex-shrink-0"></i>
-                        <div class="flex-grow">
-                            <label class="text-xs font-medium text-red-600">Destino (Toca el mapa)</label>
-                            <input type="text" id="destination-address" placeholder="Esperando selección en el mapa..." class="w-full font-semibold text-gray-800 text-sm bg-red-50 focus:outline-none" readonly>
-                            <span id="destination-coords" class="text-xs text-red-500 hidden"></span>
+                    <!-- Indicador y Campo de Destino con Autocompletado -->
+                    <div class="space-y-2 p-3 bg-red-50 rounded-lg border-2 border-red-200 relative">
+                        <div class="flex items-center space-x-3">
+                            <i data-lucide="map-pin" class="w-5 h-5 text-red-600 flex-shrink-0"></i>
+                            <div class="flex-grow">
+                                <label for="destination-address" class="text-xs font-medium text-red-600">Destino (Escribe y selecciona)</label>
+                                <input type="text" id="destination-address" placeholder="Ej: Av. Argentina 500" class="w-full font-semibold text-gray-800 text-sm bg-red-50 focus:outline-none focus:bg-white focus:ring-1 focus:ring-red-500 rounded p-1">
+                                <span id="destination-coords" class="text-xs text-red-500 hidden"></span>
+                            </div>
                         </div>
+                        <!-- Contenedor de Sugerencias de Autocompletado (CRÍTICO: z-index alto) -->
+                        <div id="autocomplete-suggestions" class="absolute z-30 w-full bg-white border border-gray-300 rounded-xl shadow-xl mt-1 left-0 right-0 max-h-48 overflow-y-auto hidden">
+                            <!-- Sugerencias se inyectan aquí -->
+                        </div>
+                        <!-- Mensaje de Distancia y Validación -->
+                        <p id="distance-message" class="text-xs font-medium text-gray-600 pl-8 pt-2">Ingresa un destino para verificar la distancia.</p>
                     </div>
                     <!-- Botón de Pedido -->
                     <button id="request-trip-btn" disabled class="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-indigo-500 text-white font-bold rounded-xl shadow-md disabled:bg-indigo-300 hover:bg-indigo-600 transition duration-150">
                         <i data-lucide="send" class="w-5 h-5"></i>
-                        <span>Selecciona Origen y Destino</span>
+                        <span>Esperando Origen y Destino</span>
                     </button>
                 </div>
             </div>
@@ -87,11 +108,13 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Distancia máxima de cobertura del servicio en kilómetros
+        const MAX_DISTANCE_KM = 60; 
+
         // CRÍTICO: Corrección del "rombo" de Leaflet con Data URI (SVG simple)
         if (typeof L !== 'undefined' && L.Icon) {
             delete L.Icon.Default.prototype._getIconUrl;
-            // Un SVG Data URI más robusto (círculo pequeño transparente) para evitar el ícono roto
-            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>');
+            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>`);
             L.Icon.Default.mergeOptions({
                 iconUrl: dataUriSvg,
                 iconRetinaUrl: dataUriSvg,
@@ -102,8 +125,8 @@
         let map;
         let originMarker;
         let destinationMarker;
-        let currentPosition = null;
-        let destinationCoords = null;
+        let currentPosition = null; // { lat, lng }
+        let destinationCoords = null; // { lat, lng }
         let destinationAddress = '';
 
         // Global Firebase instances and status
@@ -197,9 +220,6 @@
             map = L.map('map').setView([-38.9517, -68.0617], 13); 
             window.map = map;
 
-            // CRÍTICO: Invalida el tamaño inmediatamente para forzar el redibujo.
-            map.invalidateSize({ pan: false }); 
-
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap contributors'
@@ -211,56 +231,68 @@
                 iconAnchor: [16, 32],
                 popupAnchor: [0, -28]
             });
-            const originIcon = createCustomIcon('#3b82f6'); // Azul
-            const destinationIcon = createCustomIcon('#ef4444'); // Rojo
 
-            map.locate({ setView: true, maxZoom: 16 });
+            map.customIcons = {
+                origin: createCustomIcon('#3b82f6'), // Azul
+                destination: createCustomIcon('#ef4444') // Rojo
+            };
 
+            // Listener para la ubicación automática (Geolocation API)
             map.on('locationfound', (e) => {
-                const latlng = e.latlng;
+                setOriginLocation(e.latlng, "Ubicación de Origen (Detectada)");
+            });
+
+            map.on('locationerror', (e) => {
+                console.warn("Error de geolocalización:", e.message);
+                const msg = isFirebaseReady ? "✅ DB OK. ERROR GPS. HAZ CLIC en el mapa para marcar tu origen." : "⚠️ DB Offline. ERROR GPS.";
+                displayMessage(msg, 'error');
+                document.getElementById('origin-display').textContent = "ERROR GPS: Clica en el mapa para establecer tu punto de recogida.";
+            });
+
+            // NUEVO: Listener para establecer el Origen manualmente con un click
+            map.on('click', (e) => {
+                setOriginLocation(e.latlng, "Ubicación de Origen (Manual)");
+                map.setView(e.latlng, 15); // Centrar en el punto seleccionado
+            });
+
+            // Función unificada para establecer el origen
+            function setOriginLocation(latlng, popupText) {
                 currentPosition = { lat: latlng.lat, lng: latlng.lng };
 
                 if (originMarker) {
                     originMarker.setLatLng(latlng);
                 } else {
-                    originMarker = L.marker(latlng, { icon: originIcon }).addTo(map)
-                        .bindPopup("Ubicación de Origen (Tú)").openPopup();
+                    originMarker = L.marker(latlng, { icon: map.customIcons.origin }).addTo(map);
                 }
+                originMarker.setPopupContent(popupText).openPopup();
 
                 reverseGeocode(latlng, 'origin-display', (address) => {
                     document.getElementById('origin-display').textContent = address;
                     updateRequestButton();
+                    if (destinationCoords) {
+                        checkDistanceAndValidate();
+                    }
                 });
-            });
-
-            map.on('locationerror', (e) => {
-                console.warn("Error de geolocalización:", e.message);
-                const msg = isFirebaseReady ? "✅ Mapa listo. Selecciona Origen manualmente." : "⚠️ DB Offline. Selecciona Origen manualmente.";
-                displayMessage(msg, isFirebaseReady ? 'success' : 'error');
-            });
-
-            map.on('click', (e) => {
-                const latlng = e.latlng;
-                destinationCoords = { lat: latlng.lat, lng: latlng.lng };
-
-                if (destinationMarker) {
-                    destinationMarker.setLatLng(latlng);
-                } else {
-                    destinationMarker = L.marker(latlng, { icon: destinationIcon }).addTo(map)
-                        .bindPopup("Destino").openPopup();
-                }
-
-                reverseGeocode(latlng, 'destination-address', (address) => {
-                    destinationAddress = address;
-                    document.getElementById('destination-address').value = address;
-                    document.getElementById('destination-coords').textContent = `${latlng.lat}, ${latlng.lng}`;
-                    updateRequestButton();
-                });
-            });
+            }
             
-            displayMessage("✅ Mapa cargado y listo. Toca el mapa para seleccionar tu destino.", 'success');
+            displayMessage("✅ Mapa inicializado. Buscando tu ubicación o espera tu clic...", 'success');
         }
 
+        // --- FUNCIONES DE GEOCODIFICACIÓN Y DISTANCIA ---
+
+        /** Calcula la distancia Haversine en km entre dos puntos de Lat/Lng */
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radio de la Tierra en kilómetros
+            const dLat = (lat2 - lat1) * (Math.PI / 180);
+            const dLon = (lon2 - lon1) * (Math.PI / 180);
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // Distancia en km
+        }
+
+        /** Convierte coordenadas a dirección legible */
         async function reverseGeocode(latlng, elementId, callback) {
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`;
             
@@ -273,10 +305,162 @@
                 callback(`Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`);
             }
         }
+        
+        /** Busca direcciones (geocodificación) con prioridad en la vista actual */
+        async function fetchAutocompleteSuggestions(query) {
+            if (!query || query.length < 3) return [];
+            
+            let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=ar`;
 
-        function updateRequestButton() {
+            // Si tenemos la posición actual, creamos un viewbox para priorizar resultados locales
+            if (currentPosition) {
+                // Definir un viewbox de 10km alrededor de la posición actual
+                const delta = 0.09; // Aproximadamente 10km en lat/lng
+                const lonMin = currentPosition.lng - delta;
+                const latMax = currentPosition.lat + delta;
+                const lonMax = currentPosition.lng + delta;
+                const latMin = currentPosition.lat - delta;
+                
+                // Nominatim viewbox format: [lon_min, lat_max, lon_max, lat_min]
+                const viewbox = `${lonMin},${latMax},${lonMax},${latMin}`;
+                url += `&viewbox=${viewbox}&bounded=1`; // Bounded=1 fuerza la búsqueda dentro del viewbox
+            }
+            
+            try {
+                const response = await fetch(url, { headers: { 'User-Agent': 'TaxiDelValleApp' } });
+                const data = await response.json();
+                
+                return data.map(item => ({
+                    address: item.display_name,
+                    lat: parseFloat(item.lat),
+                    lng: parseFloat(item.lon)
+                }));
+            } catch (error) {
+                console.error("Error fetching suggestions:", error);
+                return [];
+            }
+        }
+
+        // --- LÓGICA DE AUTOCOMPLETADO Y UI ---
+
+        let geocodingTimeout;
+        const destinationInput = document.getElementById('destination-address');
+        const distanceMessage = document.getElementById('distance-message');
+        const suggestionsContainer = document.getElementById('autocomplete-suggestions');
+
+        // Evento de entrada con debounce para no saturar el API de Nominatim
+        destinationInput.addEventListener('input', () => {
+            clearTimeout(geocodingTimeout);
+            suggestionsContainer.classList.add('hidden');
+            destinationCoords = null; // Reiniciar coordenadas hasta que se seleccione una sugerencia
+            updateRequestButton();
+
+            if (destinationInput.value.length >= 3) {
+                geocodingTimeout = setTimeout(searchAndDisplaySuggestions, 300);
+            } else {
+                distanceMessage.textContent = "Ingresa al menos 3 caracteres para buscar destino.";
+            }
+        });
+
+        // Ocultar sugerencias al perder foco, a menos que el foco esté en la lista misma
+        document.addEventListener('click', (e) => {
+            if (!suggestionsContainer.contains(e.target) && e.target !== destinationInput) {
+                suggestionsContainer.classList.add('hidden');
+            }
+        });
+
+        async function searchAndDisplaySuggestions() {
+            const query = destinationInput.value;
+            if (query.length < 3) return;
+
+            distanceMessage.textContent = "Buscando direcciones cercanas...";
+            const results = await fetchAutocompleteSuggestions(query);
+
+            suggestionsContainer.innerHTML = '';
+
+            if (results.length > 0) {
+                results.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'suggestion-item text-sm text-gray-800 truncate';
+                    div.textContent = item.address;
+                    // Almacenar datos en el elemento para un manejo rápido
+                    div.dataset.lat = item.lat;
+                    div.dataset.lng = item.lon; // Usamos 'lon' de Nominatim
+                    div.dataset.address = item.address;
+
+                    div.addEventListener('click', () => selectSuggestion(div));
+                    suggestionsContainer.appendChild(div);
+                });
+                suggestionsContainer.classList.remove('hidden');
+            } else {
+                suggestionsContainer.classList.add('hidden');
+                distanceMessage.textContent = "No se encontraron resultados para esa búsqueda.";
+            }
+        }
+
+        function selectSuggestion(element) {
+            destinationAddress = element.dataset.address;
+            destinationCoords = {
+                lat: parseFloat(element.dataset.lat),
+                lng: parseFloat(element.dataset.lng)
+            };
+
+            // 1. Rellenar el input y ocultar la lista
+            destinationInput.value = destinationAddress;
+            suggestionsContainer.classList.add('hidden');
+            document.getElementById('destination-coords').textContent = `${destinationCoords.lat.toFixed(4)}, ${destinationCoords.lng.toFixed(4)}`;
+
+
+            // 2. Actualizar el mapa (si está inicializado)
+            if (map && map.customIcons) {
+                const latlng = L.latLng(destinationCoords.lat, destinationCoords.lng);
+                if (destinationMarker) {
+                    destinationMarker.setLatLng(latlng);
+                } else {
+                    destinationMarker = L.marker(latlng, { icon: map.customIcons.destination }).addTo(map)
+                        .bindPopup("Destino Seleccionado").openPopup();
+                }
+                map.panTo(latlng);
+            }
+
+            // 3. Validar distancia y actualizar botón
+            checkDistanceAndValidate();
+        }
+
+        // --- LÓGICA DE VALIDACIÓN Y BOTÓN ---
+
+        function checkDistanceAndValidate() {
+            let isValid = false;
+            
+            if (currentPosition && destinationCoords) {
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    destinationCoords.lat, destinationCoords.lng
+                );
+
+                if (distance <= MAX_DISTANCE_KM) {
+                    distanceMessage.textContent = `✅ Distancia: ${distance.toFixed(2)} km. Servicio Disponible.`;
+                    distanceMessage.classList.remove('text-red-600', 'text-gray-600');
+                    distanceMessage.classList.add('text-green-600');
+                    isValid = true;
+                } else {
+                    distanceMessage.textContent = `❌ Distancia (${distance.toFixed(2)} km) excede el límite de ${MAX_DISTANCE_KM} km.`;
+                    distanceMessage.classList.remove('text-green-600', 'text-gray-600');
+                    distanceMessage.classList.add('text-red-600');
+                    isValid = false;
+                }
+            } else if (currentPosition) {
+                distanceMessage.textContent = "Busca y selecciona un destino válido.";
+                distanceMessage.classList.remove('text-red-600', 'text-green-600');
+                distanceMessage.classList.add('text-gray-600');
+            }
+            
+            updateRequestButton(isValid);
+        }
+
+        function updateRequestButton(isDistanceValid = false) {
             const btn = document.getElementById('request-trip-btn');
-            const isReadyToRequest = currentPosition && destinationCoords;
+            const isReadyToRequest = currentPosition && destinationCoords && isDistanceValid;
             
             if (isReadyToRequest) {
                 if (isFirebaseReady) {
@@ -286,68 +470,89 @@
                     btn.classList.add('hover:bg-indigo-600');
                 } else {
                     btn.disabled = true;
-                    btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> DB Desactivada. Pedido NO disponible.</span>';
+                    btn.innerHTML = '<i data-lucide="x-circle" class="w-5 h-5"></i><span> DB Desactivada. Pedido NO disponible.</span>';
                     btn.classList.add('disabled:bg-indigo-300');
                     btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
                 }
             } else {
                 btn.disabled = true;
-                btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Selecciona Origen y Destino</span>';
+                if (!currentPosition) {
+                    btn.innerHTML = 'Establece tu Origen (Automático o Clic en el mapa)';
+                } else if (!destinationCoords || destinationInput.value.length < 3) {
+                    btn.innerHTML = 'Busca el Destino (mín. 3 letras)';
+                } else if (!isDistanceValid) {
+                     btn.innerHTML = 'Destino fuera del área de servicio (Max 60km)';
+                } else {
+                    btn.innerHTML = 'Esperando Origen y Destino';
+                }
+                
                 btn.classList.add('disabled:bg-indigo-300');
                 btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
             }
         }
 
+        // --- INICIALIZACIÓN ---
         document.addEventListener('DOMContentLoaded', () => {
             initializeFirebase();
-            displayMessage("✅ Servicios de pedido listos. Cargando mapa...", 'success');
 
             function checkAndInitMap() {
-                // Este check asegura que la librería Leaflet haya cargado
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     
-                    initMap(); // <-- Llama inmediatamente a initMap()
+                    initMap(); 
 
-                    // Bucle de invalidación forzada con requestAnimationFrame
-                    let attempts = 0;
-                    const maxAttempts = 100; 
+                    // Mecanismo de forzado de redibujo para solucionar problemas de visibilidad en el iFrame
                     const mapElement = document.getElementById('map');
-
+                    
+                    // Intento #1: requestAnimationFrame loop para forzar el redibujo
                     const forceResize = () => {
-                        if (map && attempts < maxAttempts) {
-                            // Verificamos si el contenedor ya tiene un tamaño visible
-                            if (mapElement && mapElement.offsetWidth > 0 && mapElement.offsetHeight > 0) {
-                                map.invalidateSize({ pan: false });
-                                console.log(`Leaflet: invalidateSize() confirmado y exitoso en intento ${attempts}.`);
-                                // Se logró, terminar el bucle aquí
-                            } else {
-                                attempts++;
-                                // Si no está listo, intentamos de nuevo en el próximo frame
-                                requestAnimationFrame(forceResize);
-                            }
+                        if (map && mapElement && (mapElement.offsetWidth === 0 || mapElement.offsetHeight === 0)) {
+                            requestAnimationFrame(forceResize);
+                        } else if (map) {
+                            map.invalidateSize({ pan: false });
+                            // Intentar la geolocalización una vez que el mapa es visible
+                            map.locate({ setView: true, maxZoom: 16 });
                         }
                     };
-
-                    // Iniciamos el bucle de resize inmediatamente después de crear el mapa.
                     requestAnimationFrame(forceResize);
+
+                    // Intento #2: Timeout final de respaldo
+                    setTimeout(() => {
+                        if(map) {
+                            map.invalidateSize({ pan: true });
+                        }
+                    }, 150);
                     
                 } else {
-                    // Reintenta la inicialización si la librería no está lista.
                     setTimeout(checkAndInitMap, 50); 
                 }
             }
             
-            // CRÍTICO - CAMBIO APLICADO: Llamada inmediata, confiando en el bucle interno
             checkAndInitMap();
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
+                    displayMessage('Buscando ubicación actual...', 'info');
                     map.locate({ setView: true, maxZoom: 16 });
                 }
             });
 
             document.getElementById('request-trip-btn').addEventListener('click', async () => {
-                if (!currentPosition || !destinationCoords || !isFirebaseReady) {
+                const btn = document.getElementById('request-trip-btn');
+                if (btn.disabled) return;
+
+                // Re-validación final
+                if (!currentPosition || !destinationCoords) {
+                    displayMessage('Error: Faltan datos de Origen o Destino.', 'error');
+                    return;
+                }
+                
+                const distance = calculateDistance(
+                    currentPosition.lat, currentPosition.lng,
+                    destinationCoords.lat, destinationCoords.lng
+                );
+
+                if (distance > MAX_DISTANCE_KM) {
+                    displayMessage(`❌ El destino está fuera del área de servicio (${distance.toFixed(2)} km).`, 'error');
                     return;
                 }
 
@@ -358,6 +563,7 @@
                     destino_lat: destinationCoords.lat,
                     destino_lng: destinationCoords.lng,
                     destino_address: destinationAddress,
+                    distancia_km: distance.toFixed(2), 
                     cliente_ref: auth?.currentUser?.uid || 'anonimo',
                     timestamp: new Date().toISOString(),
                 };
@@ -366,8 +572,8 @@
 
                 if (success) {
                     displayMessage('✅ ¡Pedido enviado con éxito! Buscando chofer...', 'success');
-                    document.getElementById('request-trip-btn').disabled = true;
-                    document.getElementById('request-trip-btn').innerHTML = 'Pedido Enviado. Esperando Asignación...';
+                    btn.disabled = true;
+                    btn.innerHTML = 'Pedido Enviado. Esperando Asignación...';
                 }
             });
         });
