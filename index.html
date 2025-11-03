@@ -162,13 +162,12 @@
             }
             
             try {
-                // La colección se almacena en el área pública para que AppSheet pueda acceder
                 const collectionPath = `artifacts/${appId}/public/data/pedidos`;
                 const docRef = await addDoc(collection(db, collectionPath), {
                     ...pedidoData,
-                    userId: auth.currentUser.uid, // ID del cliente que pide
+                    userId: auth.currentUser.uid,
                     createdAt: new Date().toISOString(),
-                    estado: "PENDIENTE" // Estado inicial del pedido
+                    estado: "PENDIENTE"
                 });
                 console.log("Pedido guardado con ID:", docRef.id);
                 return true;
@@ -186,7 +185,6 @@
 
         // Función para inicializar el mapa Leaflet
         function initMap() {
-            // L.map ahora debe estar disponible porque el script de Leaflet se carga antes.
             map = L.map('map').setView([-38.9517, -68.0617], 13); // Centrado en Neuquén (ejemplo)
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -301,6 +299,8 @@
             function checkAndInitMap() {
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     initMap();
+                    // CRÍTICO: Asegura que Leaflet recalcule el tamaño del contenedor, solucionando mapas ocultos
+                    map.invalidateSize(); 
                     console.log("Leaflet/Mapa inicializado correctamente.");
                 } else {
                     // Reintentar en un ciclo de eventos posterior si L.map no está listo.
