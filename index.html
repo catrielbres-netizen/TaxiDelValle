@@ -15,6 +15,7 @@
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        /* CRÍTICO: Aseguramos que el contenedor del mapa tenga una altura definida */
         #map { height: 65vh; width: 100%; border-radius: 0 0 1rem 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
         .leaflet-container { z-index: 1; }
         .fab-button { transition: background-color 0.3s, transform 0.1s; }
@@ -298,10 +299,16 @@
             // 2. Lógica para asegurar que Leaflet esté completamente cargado
             function checkAndInitMap() {
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
-                    initMap();
-                    // CRÍTICO: Asegura que Leaflet recalcule el tamaño del contenedor, solucionando mapas ocultos
-                    map.invalidateSize(); 
-                    console.log("Leaflet/Mapa inicializado correctamente.");
+                    // CRÍTICO: Usamos un pequeño retraso para permitir que el DOM se asiente
+                    setTimeout(() => {
+                        initMap();
+                        // Forzar el redimensionamiento del mapa DESPUÉS de la inicialización
+                        if (map) {
+                            map.invalidateSize();
+                        }
+                        console.log("Leaflet/Mapa inicializado correctamente con corrección de tamaño.");
+                    }, 100); // 100ms de retraso para asegurar el renderizado
+                    
                 } else {
                     // Reintentar en un ciclo de eventos posterior si L.map no está listo.
                     setTimeout(checkAndInitMap, 50); 
