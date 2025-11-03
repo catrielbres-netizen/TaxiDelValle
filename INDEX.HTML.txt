@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taxi del Valle - Pedido</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fuente Inter para estética moderna -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Carga de Leaflet CSS y JS (Librería de Mapas) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20n63W4ai0B8n7zL8dE5P5wzJbuvjt+YF6r7o/qBCV0="
+        crossorigin=""></script>
+    <!-- Carga de Iconos (Lucide Icons) -->
+    <script type="module">
+        // CORRECCIÓN: Cambiado 'Taxi' a 'Car' para que coincida con el nombre de exportación de Lucide.
+        import { createIcons, MapPin, LocateFixed, Car, Send } from 'https://unpkg.com/lucide@latest/dist/esm/lucide.js';
+        createIcons({ icons: { MapPin, LocateFixed, Car, Send } });
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        /* Estilo para el contenedor del mapa */
+        #map { height: 65vh; width: 100%; border-radius: 0 0 1rem 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .leaflet-container { z-index: 1; }
+        .fab-button { transition: background-color 0.3s, transform 0.1s; }
+        .fab-button:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="min-h-screen antialiased">
+
+    <!-- Contenedor Principal -->
+    <div id="app-container" class="max-w-md mx-auto bg-white min-h-screen shadow-lg">
+
+        <!-- Header y Botón de Historial -->
+        <header class="p-4 bg-yellow-500 text-white flex justify-between items-center rounded-b-xl">
+            <!-- CORRECCIÓN: Cambiado data-lucide="taxi" a "car" -->
+            <h1 class="text-xl font-bold">Taxi del Valle <i data-lucide="car" class="inline-block w-6 h-6"></i></h1>
+            <button id="show-history-btn" class="bg-yellow-600 hover:bg-yellow-700 p-2 rounded-full shadow-md transition duration-150">
+                <i data-lucide="list" class="w-5 h-5"></i>
+            </button>
+        </header>
+
+        <!-- Banner de Bienvenida (NUEVA ADICIÓN) -->
+        <div class="px-4 py-3 bg-indigo-100 text-indigo-800 font-semibold text-center text-sm border-b border-indigo-200 shadow-sm">
+            ¡Bienvenido/a a la App de Servicio de Taxi del Valle!
+        </div>
+
+        <!-- Area de la App (Mapa y Controles) -->
+        <main id="main-content" class="relative">
+            <!-- Contenedor del Mapa -->
+            <div id="map" class="mb-4"></div>
+
+            <!-- Panel de Control y Formulario -->
+            <div class="px-4 pb-20">
+                <div class="space-y-4 p-4 bg-white rounded-xl shadow-lg border border-gray-100">
+
+                    <!-- Indicador de Origen -->
+                    <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
+                        <i data-lucide="locate-fixed" class="w-5 h-5 text-indigo-600 flex-shrink-0"></i>
+                        <div class="flex-grow">
+                            <label class="text-xs font-medium text-indigo-600">Origen (Recogida)</label>
+                            <p id="origin-display" class="font-semibold text-gray-800 text-sm truncate">Cargando ubicación actual...</p>
+                        </div>
+                    </div>
+
+                    <!-- Indicador y Campo de Destino -->
+                    <div class="flex items-center space-x-3 p-3 bg-red-50 rounded-lg border-2 border-red-200">
+                        <i data-lucide="map-pin" class="w-5 h-5 text-red-600 flex-shrink-0"></i>
+                        <div class="flex-grow">
+                            <label class="text-xs font-medium text-red-600">Destino (Toca el mapa)</label>
+                            <input type="text" id="destination-address" placeholder="Esperando selección en el mapa..."
+                                class="w-full font-semibold text-gray-800 text-sm bg-red-50 focus:outline-none" readonly>
+                            <span id="destination-coords" class="text-xs text-red-500 hidden"></span>
+                        </div>
+                    </div>
+
+                    <!-- Botón de Pedido -->
+                    <button id="request-trip-btn" disabled
+                        class="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-indigo-500 text-white font-bold rounded-xl shadow-md disabled:bg-indigo-300 hover:bg-indigo-600 transition duration-150">
+                        <i data-lucide="send" class="w-5 h-5"></i>
+                        <span>PEDIR TAXI A DESTINO</span>
+                    </button>
+                    <p id="message-box" class="text-sm text-center text-red-500 mt-2"></p>
+                </div>
+            </div>
+
+            <!-- Loader Flotante -->
+            <div id="loader" class="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center rounded-b-xl z-20 hidden">
+                <div class="flex flex-col items-center">
+                    <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="mt-3 text-indigo-600 font-medium">Procesando pedido...</p>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Contenedor del Historial (Oculto por defecto) -->
+        <div id="history-view" class="p-4 hidden">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Mis Pedidos Recientes</h2>
+            <div id="history-list" class="space-y-3">
+                <!-- Los pedidos del cliente se cargarán aquí -->
+                <div class="text-gray-500 text-center p-8 border rounded-lg">Cargando historial...</div>
+            </div>
+            <button id="back-to-map-btn" class="mt-6 w-full py-3 bg-yellow-500 text-white font-semibold rounded-xl hover:bg-yellow-600 transition duration-150">
+                <i data-lucide="map" class="inline-block w-5 h-5 mr-2"></i> Volver al Mapa
+            </button>
+        </div>
+    </div>
+
+    <!-- Carga de Firebase y lógica del Mapa/App -->
+    <script type="module">
+        // Importaciones de Firebase (Usando las variables globales inyectadas)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, onSnapshot, collection, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =========================================================================
+        // 1. CONFIGURACIÓN INICIAL DE FIREBASE
+        // =========================================================================
+        let db, auth, userId, appId;
+
+        const loader = document.getElementById('loader');
+        const originDisplay = document.getElementById('origin-display');
+        const destinationAddressInput = document.getElementById('destination-address');
+        const destinationCoordsSpan = document.getElementById('destination-coords');
+        const requestTripBtn = document.getElementById('request-trip-btn');
+        const messageBox = document.getElementById('message-box');
+        const historyList = document.getElementById('history-list');
+
+        let originLatLong = null; // Coordenadas LatLong del cliente
+        let destinationLatLong = null; // Coordenadas LatLong del destino seleccionado
+        let originAddress = "Ubicación GPS Actual";
+
+        // Variables de Mapa
+        let map, originMarker, destinationMarker;
+        const DEFAULT_CENTER = [-38.9516, -68.0583]; // Coordenadas de Neuquén (ejemplo)
+
+        // Funciones de utilidad para UI
+        const showLoader = (show) => { loader.classList.toggle('hidden', !show); };
+        const showMessage = (msg, type = 'error') => {
+            messageBox.textContent = msg;
+            messageBox.className = `text-sm text-center mt-2 ${type === 'success' ? 'text-green-600' : 'text-red-500'}`;
+        };
+
+        // Función para invertir coordenadas (Leaflet usa [lat, lng], Firestore puede necesitar [lng, lat] o string)
+        const formatLatLong = (lat, lng) => `${lat}, ${lng}`;
+
+        // Función de Geocodificación Inversa (usando servicio externo de prueba, AppSheet lo hace automáticamente)
+        // Para simular la experiencia de AppSheet, usamos un marcador de posición, ya que no podemos llamar a la API de Google Maps Geocoding aquí.
+        const reverseGeocode = (lat, lng) => {
+            // Simulación: AppSheet tomaría estas coordenadas y las convertiría en una dirección
+            return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+                .then(response => response.json())
+                .then(data => {
+                    return data.display_name || `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+                })
+                .catch(() => `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`);
+        };
+
+
+        // =========================================================================
+        // 2. INICIALIZACIÓN DE FIREBASE Y AUTH
+        // =========================================================================
+        const initializeFirebase = async () => {
+            try {
+                // Obtener configuración global
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                if (!firebaseConfig) {
+                    console.error("Firebase config is missing.");
+                    showMessage("Error de configuración: Falta Firebase Config.");
+                    return;
+                }
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Autenticación: usar token personalizado o anónimo
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                userId = auth.currentUser?.uid || crypto.randomUUID();
+                console.log("Firebase initialized. User ID:", userId);
+
+                // Iniciar mapa y flujo de pedidos
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        initializeMap();
+                        setupHistoryListener();
+                    } else {
+                         // Manejar caso de desautenticación si ocurre
+                        showMessage("Sesión de usuario no válida.");
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                showMessage(`Error al iniciar Firebase: ${error.message}`);
+            }
+        };
+
+        // =========================================================================
+        // 3. LÓGICA DEL MAPA Y GEOLOCALIZACIÓN
+        // =========================================================================
+
+        const initializeMap = () => {
+            // [VERIFICACIÓN DEFENSIVA] Asegura que Leaflet (L) esté listo antes de inicializar el mapa.
+            if (typeof L === 'undefined' || typeof L.map !== 'function') {
+                console.warn("Leaflet (L) no está cargado o listo. Reintentando en 100ms...");
+                // Usar setTimeout para intentar de nuevo, resolviendo posibles problemas de timing en el entorno.
+                setTimeout(initializeMap, 100);
+                return;
+            }
+
+            // Inicializa el mapa centrado en DEFAULT_CENTER
+            map = L.map('map').setView(DEFAULT_CENTER, 13);
+
+            // Añade los tiles de OpenStreetMap
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // Obtener ubicación del usuario
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        originLatLong = [latitude, longitude];
+                        map.setView(originLatLong, 15);
+
+                        // Marcar Origen
+                        originMarker = L.marker(originLatLong, { icon: createOriginIcon() }).addTo(map)
+                            .bindPopup("Tu ubicación actual (Origen)").openPopup();
+
+                        // Mostrar dirección de Origen
+                        reverseGeocode(latitude, longitude).then(addr => {
+                            originAddress = addr;
+                            originDisplay.textContent = addr;
+                        });
+
+                    },
+                    (error) => {
+                        console.warn('Error al obtener ubicación:', error);
+                        originDisplay.textContent = "Ubicación manual requerida. Error: " + error.message;
+                        showMessage("No se pudo obtener el GPS. Toca el mapa para establecer el Origen y Destino.", 'warning');
+                        // Si falla la geolocalización, el mapa se queda en el centro por defecto y el usuario debe tocar.
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                originDisplay.textContent = "GPS no soportado por este navegador.";
+            }
+
+            // Manejador de clic en el mapa para establecer el DESTINO
+            map.on('click', handleMapClick);
+        };
+
+        const createOriginIcon = () => {
+            return L.divIcon({
+                className: 'bg-indigo-600 border-4 border-white rounded-full shadow-lg',
+                html: '<i data-lucide="locate-fixed" class="text-white w-6 h-6 p-1"></i>',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+        };
+
+        const createDestinationIcon = () => {
+             return L.divIcon({
+                className: 'bg-red-600 border-4 border-white rounded-full shadow-lg',
+                html: '<i data-lucide="map-pin" class="text-white w-6 h-6 p-1"></i>',
+                iconSize: [32, 32],
+                iconAnchor: [16, 32]
+            });
+        }
+
+        const handleMapClick = (e) => {
+            const { lat, lng } = e.latlng;
+            destinationLatLong = [lat, lng];
+
+            // 1. Quitar marcador anterior
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+            }
+
+            // 2. Añadir nuevo marcador de destino
+            destinationMarker = L.marker([lat, lng], { icon: createDestinationIcon() }).addTo(map)
+                .bindPopup("Destino seleccionado").openPopup();
+
+            // 3. Geocodificación inversa para obtener la dirección de texto
+            reverseGeocode(lat, lng).then(addr => {
+                destinationAddressInput.value = addr;
+                destinationCoordsSpan.textContent = formatLatLong(lat, lng);
+                requestTripBtn.disabled = false; // Habilitar el botón
+                showMessage("Destino fijado. Puedes pedir tu taxi.", 'success');
+            });
+        };
+
+
+        // =========================================================================
+        // 4. LÓGICA DE FIREBASE: GUARDAR PEDIDO
+        // =========================================================================
+
+        const requestTrip = async () => {
+            if (!originLatLong || !destinationLatLong) {
+                showMessage("Por favor, espera a que se cargue tu ubicación y selecciona el destino en el mapa.");
+                return;
+            }
+            if (!userId) {
+                showMessage("Error de autenticación. Intenta recargar la app.");
+                return;
+            }
+
+            showLoader(true);
+            requestTripBtn.disabled = true;
+
+            // La ruta de la colección de Firestore para datos privados del cliente
+            const pedidosColRef = collection(db, `artifacts/${appId}/users/${userId}/PEDIDOS`);
+
+            try {
+                const newPedido = {
+                    // Datos obligatorios
+                    CLIENTE_REF_DNI: userId, // Usamos el UID como referencia de cliente
+                    FECHA_HORA_PEDIDO: new Date().toISOString(),
+                    ESTADO: "PENDIENTE", // Estado inicial
+                    // Ubicaciones (Las que usa AppSheet para DISTANCE)
+                    ORIGEN_UBICACION: formatLatLong(originLatLong[0], originLatLong[1]),
+                    ORIGEN_DIRECCION: originAddress,
+                    DESTINO_UBICACION: formatLatLong(destinationLatLong[0], destinationLatLong[1]),
+                    DESTINO_DIRECCION: destinationAddressInput.value,
+                    // Otros campos que AppSheet pueda necesitar (ej: para Liquidación)
+                    CHOFER_ASIGNADO_REF: "",
+                    COMENTARIOS_CLIENTE: "", // Se puede añadir un input en el futuro
+                    METODO_PAGO_PREFERIDO: "Efectivo", // Valor por defecto
+                    PAGADO: false,
+                    // ID_PEDIDO (Firestore genera el ID del documento)
+                };
+
+                // Guardar en Firestore
+                await addDoc(pedidosColRef, newPedido);
+
+                showMessage("✅ ¡Pedido enviado con éxito! Buscando chofer...", 'success');
+                // Limpiar la interfaz después del éxito
+                destinationLatLong = null;
+                destinationAddressInput.value = "";
+                if (destinationMarker) {
+                   map.removeLayer(destinationMarker);
+                }
+                requestTripBtn.disabled = true;
+
+            } catch (error) {
+                console.error("Error al guardar el pedido:", error);
+                showMessage(`❌ Error al pedir taxi: ${error.message}`);
+                requestTripBtn.disabled = false;
+            } finally {
+                showLoader(false);
+            }
+        };
+
+        // =========================================================================
+        // 5. LÓGICA DE FIREBASE: HISTORIAL
+        // =========================================================================
+
+        const setupHistoryListener = () => {
+            // Ruta para escuchar solo los pedidos de este usuario
+            const pedidosColRef = collection(db, `artifacts/${appId}/users/${userId}/PEDIDOS`);
+            // Consulta: todos los pedidos ordenados por fecha, limitando a 5
+            const q = query(pedidosColRef, orderBy("FECHA_HORA_PEDIDO", "desc"), limit(5));
+
+            onSnapshot(q, (snapshot) => {
+                historyList.innerHTML = '';
+                if (snapshot.empty) {
+                    historyList.innerHTML = `<div class="text-gray-500 text-center p-6 bg-gray-50 rounded-lg">Aún no tienes pedidos registrados.</div>`;
+                    return;
+                }
+
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const statusColor = data.ESTADO === "FINALIZADO" ? 'bg-green-100 text-green-700' :
+                                        data.ESTADO === "PENDIENTE" ? 'bg-yellow-100 text-yellow-700' :
+                                        data.ESTADO === "EN VIAJE" ? 'bg-indigo-100 text-indigo-700' :
+                                        'bg-gray-100 text-gray-700';
+
+                    const tripCard = `
+                        <div class="p-4 border border-gray-200 rounded-xl shadow-sm bg-white hover:bg-gray-50 transition duration-100">
+                            <div class="flex justify-between items-start">
+                                <p class="text-sm font-medium text-gray-400">${new Date(data.FECHA_HORA_PEDIDO).toLocaleString('es-AR')}</p>
+                                <span class="text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor}">${data.ESTADO}</span>
+                            </div>
+                            <p class="text-sm mt-2">
+                                <span class="font-bold text-gray-700">De:</span> ${data.ORIGEN_DIRECCION || 'Origen no especificado'}
+                            </p>
+                            <p class="text-sm">
+                                <span class="font-bold text-gray-700">A:</span> ${data.DESTINO_DIRECCION || 'Destino no especificado'}
+                            </p>
+                            <p class="text-sm text-right font-bold text-indigo-600 mt-2">
+                                Costo Estimado: $${data.COSTO_TOTAL || 'N/A'}
+                            </p>
+                        </div>
+                    `;
+                    historyList.innerHTML += tripCard;
+                });
+            });
+        };
+
+
+        // =========================================================================
+        // 6. MANEJADORES DE EVENTOS
+        // =========================================================================
+
+        window.onload = initializeFirebase;
+        requestTripBtn.addEventListener('click', requestTrip);
+
+        // Lógica de cambio de vista (Mapa vs. Historial)
+        const mainContent = document.getElementById('main-content');
+        const historyView = document.getElementById('history-view');
+        const showHistoryBtn = document.getElementById('show-history-btn');
+        const backToMapBtn = document.getElementById('back-to-map-btn');
+
+        showHistoryBtn.addEventListener('click', () => {
+            mainContent.classList.add('hidden');
+            historyView.classList.remove('hidden');
+        });
+
+        backToMapBtn.addEventListener('click', () => {
+            historyView.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+        });
+
+
+    </script>
+</body>
+</html>
