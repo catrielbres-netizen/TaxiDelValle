@@ -1,4 +1,4 @@
-<!DOCTYPE />
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -21,6 +21,9 @@
         .fab-button { transition: background-color 0.3s, transform 0.1s; }
         .fab-button:active { transform: scale(0.95); }
     </style>
+
+    <!-- CRÍTICO: CARGA DE LEAFLET CSS EN EL HEAD -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 </head>
 <body class="min-h-screen antialiased">
     <!-- Contenedor Principal -->
@@ -74,8 +77,7 @@
         </main>
     </div>
 
-    <!-- Carga de Leaflet CSS y JS (Librería de Mapas) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- Carga de Leaflet JS (se carga al final para asegurar el DOM) -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20n63W4ai0B8n7zL8dE5P5wzJbuvjt+YF6r7o/qBCV0=" crossorigin=""></script>
     
     <!-- Script Principal de la Aplicación y Lógica del Mapa -->
@@ -108,7 +110,6 @@
         let auth = null;
         let isFirebaseReady = false; 
 
-        // Función para mostrar mensajes de estado
         function displayMessage(message, type = 'info') {
             const statusDiv = document.getElementById('status-message');
             statusDiv.textContent = message;
@@ -125,10 +126,6 @@
             }
         }
 
-        // ====================================================================
-        // INICIALIZACIÓN DE FIREBASE
-        // ====================================================================
-
         const initializeFirebase = async () => {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
@@ -143,7 +140,6 @@
 
             try {
                 const firebaseConfig = JSON.parse(firebaseConfigRaw);
-                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -156,7 +152,7 @@
 
                 console.log("Firebase: Inicialización exitosa.");
                 isFirebaseReady = true;
-                displayMessage("✅ Mapa interactivo y servicios de pedido listos.", 'success');
+                displayMessage("✅ Servicios de pedido listos. Cargando mapa...", 'success');
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
                 displayMessage("⚠️ Error al conectar la base de datos. Pedidos deshabilitados.", 'error');
@@ -190,10 +186,6 @@
             }
         };
 
-        // ====================================================================
-        // INICIALIZACIÓN DEL MAPA
-        // ====================================================================
-
         function initMap() {
             const mapElement = document.getElementById('map');
             if (!mapElement || typeof L.map !== 'function') {
@@ -208,7 +200,6 @@
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
 
-            // Iconos personalizados con Data URI (SVG)
             const createCustomIcon = (color) => L.icon({
                 iconUrl: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>`),
                 iconSize: [32, 32],
@@ -218,7 +209,6 @@
             const originIcon = createCustomIcon('#3b82f6'); // Azul
             const destinationIcon = createCustomIcon('#ef4444'); // Rojo
 
-            // 1. Manejo del Origen (Geolocalización)
             map.locate({ setView: true, maxZoom: 16 });
 
             map.on('locationfound', (e) => {
@@ -244,7 +234,6 @@
                 displayMessage(msg, isFirebaseReady ? 'success' : 'error');
             });
 
-            // 2. Manejo del Destino (Clic en el Mapa)
             map.on('click', (e) => {
                 const latlng = e.latlng;
                 destinationCoords = { lat: latlng.lat, lng: latlng.lng };
@@ -278,7 +267,6 @@
             }
         }
 
-        // Habilita/Deshabilita el botón de pedido y actualiza su texto
         function updateRequestButton() {
             const btn = document.getElementById('request-trip-btn');
             const isReadyToRequest = currentPosition && destinationCoords;
@@ -303,22 +291,16 @@
             }
         }
 
-        // ===============================================================
-        // LÓGICA DE INICIALIZACIÓN FINAL CON RETARDO CRÍTICO
-        // ===============================================================
         document.addEventListener('DOMContentLoaded', () => {
             initializeFirebase();
 
             function checkAndInitMap() {
-                // Comprobación de Leaflet
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     
-                    // 1. Inicializar el mapa
                     initMap();
-                    console.log("Leaflet: Mapa creado. Esperando 300ms para forzar el tamaño...");
+                    console.log("Leaflet: Mapa creado. Forzando el tamaño...");
 
-                    // 2. CRÍTICO: Invalida el tamaño después de un retardo generoso.
-                    // Esto asegura que el iFrame haya terminado de calcular todas las dimensiones del DOM.
+                    // Solución CRÍTICA de timing: Forzar el re-cálculo de tamaño
                     setTimeout(() => {
                         if (map) {
                             map.invalidateSize();
@@ -332,7 +314,7 @@
                 }
             }
             
-            checkAndInitMap(); // Iniciar la verificación del mapa
+            checkAndInitMap();
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
