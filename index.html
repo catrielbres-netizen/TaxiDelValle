@@ -103,12 +103,13 @@
 
             if (type === 'error') {
                 statusDiv.classList.add('bg-red-100', 'text-red-800', 'border-red-200');
-                statusDiv.classList.remove('bg-indigo-100', 'text-indigo-800');
+                statusDiv.classList.remove('bg-indigo-100', 'text-indigo-800', 'bg-green-100');
             } else if (type === 'success') {
                 statusDiv.classList.add('bg-green-100', 'text-green-800', 'border-green-200');
-                statusDiv.classList.remove('bg-indigo-100', 'text-indigo-800');
+                statusDiv.classList.remove('bg-indigo-100', 'text-indigo-800', 'bg-red-100');
             } else {
                 statusDiv.classList.add('bg-indigo-100', 'text-indigo-800');
+                statusDiv.classList.remove('bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800');
             }
         }
 
@@ -116,19 +117,23 @@
         // INICIALIZACIÓN DE FIREBASE Y FUNCIONES DE GUARDADO (CRÍTICO)
         // ====================================================================
 
-        // Variables globales proporcionadas por el entorno (Canvas)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // Nueva función de inicialización usando imports de módulos
         const initializeFirebase = async () => {
-            if (!firebaseConfig) {
-                displayMessage("Error: No se encontró la configuración de Firebase.", 'error');
+            // Variables globales proporcionadas por el entorno (Canvas)
+            // CRÍTICO: Estas variables se recuperan en el punto de ejecución.
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+            
+            if (!firebaseConfigRaw) {
+                // Si la configuración de Firebase NO existe, mostramos el error y detenemos la inicialización.
+                displayMessage("Error de configuración: Falta Firebase Config.", 'error');
                 return;
             }
-            
+
             try {
+                // Parseamos la configuración solo si existe
+                const firebaseConfig = JSON.parse(firebaseConfigRaw);
+                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -145,13 +150,13 @@
                 displayMessage("Mapa interactivo y servicios de pedido listos.", 'success');
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                displayMessage("Error fatal al inicializar Firebase.", 'error');
+                displayMessage("Error fatal al inicializar Firebase. Revise la consola.", 'error');
             }
         };
 
         // Función global para guardar el pedido en Firestore (accesible por el botón)
         window.savePedidoToFirestore = async function(pedidoData) {
-            if (!db || !auth.currentUser) {
+            if (!db || !auth || !auth.currentUser) {
                 displayMessage("Error: Conexión a Firebase o autenticación fallida.", 'error');
                 return false;
             }
@@ -277,27 +282,28 @@
             if (currentPosition && destinationCoords) {
                 btn.disabled = false;
                 btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Solicitar Viaje Ahora</span>';
-                btn.classList.replace('disabled:bg-indigo-300', 'bg-indigo-500');
+                btn.classList.remove('disabled:bg-indigo-300');
+                btn.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
             } else {
                 btn.disabled = true;
                 btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Selecciona Origen y Destino</span>';
-                btn.classList.replace('bg-indigo-500', 'disabled:bg-indigo-300');
+                btn.classList.add('disabled:bg-indigo-300');
+                btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
             }
         }
 
         // Inicialización y Manejadores de Eventos
         document.addEventListener('DOMContentLoaded', () => {
-            // Cargar Firebase antes de cualquier interacción de guardado
+            // 1. Cargar Firebase (CRÍTICO: ahora con verificación de configuración)
             initializeFirebase();
 
-            // Lógica para asegurar que Leaflet esté completamente cargado (L.map exista)
+            // 2. Lógica para asegurar que Leaflet esté completamente cargado
             function checkAndInitMap() {
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     initMap();
                     console.log("Leaflet/Mapa inicializado correctamente.");
                 } else {
                     // Reintentar en un ciclo de eventos posterior si L.map no está listo.
-                    console.log("Esperando a que Leaflet termine de cargar...");
                     setTimeout(checkAndInitMap, 50); 
                 }
             }
@@ -328,7 +334,7 @@
                     destino_lng: destinationCoords.lng,
                     destino_address: destinationAddress,
                     // Otros campos iniciales
-                    cliente_ref: auth.currentUser ? auth.currentUser.uid : 'anonimo',
+                    cliente_ref: auth?.currentUser?.uid || 'anonimo', // Uso seguro de optional chaining
                     timestamp: new Date().toISOString(),
                 };
 
@@ -342,8 +348,6 @@
                     document.getElementById('request-trip-btn').disabled = true;
                     document.getElementById('request-trip-btn').innerHTML = 'Pedido Enviado. Esperando Asignación...';
                     
-                } else {
-                    // El error ya se maneja en savePedidoToFirestore
                 }
             });
             // ===============================================================
