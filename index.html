@@ -34,7 +34,7 @@
         </header>
         <!-- Banner de Bienvenida -->
         <div id="status-message" class="px-4 py-3 bg-indigo-100 text-indigo-800 font-semibold text-center text-sm border-b border-indigo-200 shadow-sm">
-            Cargando el mapa y servicios...
+            Inicializando aplicación...
         </div>
         <!-- Area de la App (Mapa y Controles) -->
         <main id="main-content" class="relative">
@@ -89,10 +89,7 @@
         // Esto reemplaza las rutas relativas de los iconos por defecto con un Data URI (un SVG).
         if (typeof L !== 'undefined' && L.Icon) {
             delete L.Icon.Default.prototype._getIconUrl;
-
-            // Simple SVG de un círculo transparente para forzar la carga del icono
             const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>');
-
             L.Icon.Default.mergeOptions({
                 iconUrl: dataUriSvg,
                 iconRetinaUrl: dataUriSvg,
@@ -107,47 +104,47 @@
         let destinationCoords = null;
         let destinationAddress = '';
 
-        // Global Firebase instances
+        // Global Firebase instances and status
         let db = null;
         let auth = null;
+        let isFirebaseReady = false; // Nuevo: Bandera de estado de Firebase
 
         // Función para mostrar mensajes de estado
         function displayMessage(message, type = 'info') {
             const statusDiv = document.getElementById('status-message');
             statusDiv.textContent = message;
-            statusDiv.className = 'px-4 py-3 font-semibold text-center text-sm border-b border-indigo-200 shadow-sm';
+            statusDiv.className = 'px-4 py-3 font-semibold text-center text-sm border-b shadow-sm';
+
+            // Resetting classes
+            statusDiv.classList.remove('bg-red-100', 'text-red-800', 'border-red-200', 'bg-green-100', 'text-green-800', 'border-green-200', 'bg-indigo-100', 'text-indigo-800', 'border-indigo-200');
 
             if (type === 'error') {
                 statusDiv.classList.add('bg-red-100', 'text-red-800', 'border-red-200');
-                statusDiv.classList.remove('bg-indigo-100', 'text-indigo-800', 'bg-green-100');
             } else if (type === 'success') {
                 statusDiv.classList.add('bg-green-100', 'text-green-800', 'border-green-200');
-                statusDiv.classList.remove('bg-indigo-100', 'text-indigo-800', 'bg-red-100');
-            } else {
-                statusDiv.classList.add('bg-indigo-100', 'text-indigo-800');
-                statusDiv.classList.remove('bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800');
+            } else { // info / default
+                statusDiv.classList.add('bg-indigo-100', 'text-indigo-800', 'border-indigo-200');
             }
         }
 
         // ====================================================================
-        // INICIALIZACIÓN DE FIREBASE Y FUNCIONES DE GUARDADO (CRÍTICO)
+        // INICIALIZACIÓN DE FIREBASE (AHORA MÁS ROBUSTA)
         // ====================================================================
 
         const initializeFirebase = async () => {
             // Variables globales proporcionadas por el entorno (Canvas)
-            // CRÍTICO: Estas variables se recuperan en el punto de ejecución.
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
             const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
             
             if (!firebaseConfigRaw) {
-                // Si la configuración de Firebase NO existe, mostramos el error y detenemos la inicialización.
-                displayMessage("Error de configuración: Falta Firebase Config.", 'error');
+                console.warn("Firebase: Configuración (__firebase_config) NO encontrada. Las funciones de base de datos están deshabilitadas.");
+                displayMessage("⚠️ Mapa listo. Base de datos (pedidos) desactivada. (Falta Configuración)", 'error');
+                isFirebaseReady = false;
                 return;
             }
 
             try {
-                // Parseamos la configuración solo si existe
                 const firebaseConfig = JSON.parse(firebaseConfigRaw);
                 
                 const app = initializeApp(firebaseConfig);
@@ -157,27 +154,34 @@
                 // Autenticación
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
-                    console.log("Firebase Auth: Usuario autenticado con token.");
                 } else {
                     await signInAnonymously(auth);
-                    console.log("Firebase Auth: Sesión Anónima iniciada.");
                 }
 
-                displayMessage("Mapa interactivo y servicios de pedido listos.", 'success');
+                console.log("Firebase: Inicialización exitosa. Usuario UID:", auth.currentUser.uid);
+                isFirebaseReady = true;
+                displayMessage("✅ Mapa interactivo y servicios de pedido listos.", 'success');
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                displayMessage("Error fatal al inicializar Firebase. Revise la consola.", 'error');
+                displayMessage("⚠️ Error al conectar la base de datos. Mapa funcional, pero pedidos deshabilitados.", 'error');
+                isFirebaseReady = false;
+            } finally {
+                // Aseguramos que el botón refleje el estado de Firebase
+                updateRequestButton();
             }
         };
 
         // Función global para guardar el pedido en Firestore (accesible por el botón)
         window.savePedidoToFirestore = async function(pedidoData) {
-            if (!db || !auth || !auth.currentUser) {
-                displayMessage("Error: Conexión a Firebase o autenticación fallida.", 'error');
+            if (!isFirebaseReady || !db || !auth || !auth.currentUser) {
+                displayMessage("Error: La base de datos no está disponible. No se pudo enviar el pedido.", 'error');
                 return false;
             }
             
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
             try {
+                // Usamos la ruta pública para que los choferes (otros usuarios) puedan ver el pedido
                 const collectionPath = `artifacts/${appId}/public/data/pedidos`;
                 const docRef = await addDoc(collection(db, collectionPath), {
                     ...pedidoData,
@@ -201,6 +205,12 @@
 
         // Función para inicializar el mapa Leaflet
         function initMap() {
+            // Verificamos si Leaflet se cargó correctamente antes de proceder
+            if (typeof L.map !== 'function') {
+                console.error("Leaflet no se ha cargado correctamente.");
+                return;
+            }
+
             map = L.map('map').setView([-38.9517, -68.0617], 13); // Centrado en Neuquén (ejemplo)
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -247,7 +257,8 @@
 
             map.on('locationerror', (e) => {
                 console.error("Error de geolocalización:", e.message);
-                displayMessage("Error al obtener ubicación. Mueve el mapa para el origen.", 'error');
+                // Si la geolocalización falla, simplemente centramos el mapa, no es un error fatal
+                displayMessage(isFirebaseReady ? "✅ Mapa y DB listos. Selecciona el origen manualmente." : "⚠️ DB Offline. Selecciona el origen manualmente.", isFirebaseReady ? 'success' : 'error');
             });
 
             // 2. Manejo del Destino (Clic en el Mapa)
@@ -270,12 +281,13 @@
                     updateRequestButton();
                 });
             });
+            
+            // Forzar el redimensionamiento del mapa DESPUÉS de la inicialización
+            map.invalidateSize();
         }
 
         // Simulación de Reverse Geocoding (Usando un servicio externo o mock)
         async function reverseGeocode(latlng, elementId, callback) {
-            // NOTA: En un entorno de producción, aquí usarías Google Maps Geocoding API o Nominatim
-            // Usamos Nominatim (OpenStreetMap) como mock para obtener una dirección
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`;
             
             try {
@@ -289,16 +301,26 @@
             }
         }
 
-        // Habilita/Deshabilita el botón de pedido
+        // Habilita/Deshabilita el botón de pedido y actualiza su texto
         function updateRequestButton() {
             const btn = document.getElementById('request-trip-btn');
+            const isReadyToRequest = currentPosition && destinationCoords;
             
-            if (currentPosition && destinationCoords) {
-                btn.disabled = false;
-                btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Solicitar Viaje Ahora</span>';
-                btn.classList.remove('disabled:bg-indigo-300');
-                btn.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+            if (isReadyToRequest) {
+                if (isFirebaseReady) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Solicitar Viaje Ahora</span>';
+                    btn.classList.remove('disabled:bg-indigo-300');
+                    btn.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+                } else {
+                    // Listo para pedir, pero la DB no está disponible
+                    btn.disabled = true; // Deshabilitamos ya que guardar el pedido es esencial
+                    btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> DB Desactivada. Pedido NO disponible.</span>';
+                    btn.classList.add('disabled:bg-indigo-300');
+                    btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
+                }
             } else {
+                // Faltan coordenadas
                 btn.disabled = true;
                 btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Selecciona Origen y Destino</span>';
                 btn.classList.add('disabled:bg-indigo-300');
@@ -308,29 +330,25 @@
 
         // Inicialización y Manejadores de Eventos
         document.addEventListener('DOMContentLoaded', () => {
-            // 1. Cargar Firebase (CRÍTICO: ahora con verificación de configuración)
+            // 1. Inicializar Firebase (lo primero, para establecer isFirebaseReady)
             initializeFirebase();
 
-            // 2. Lógica para asegurar que Leaflet esté completamente cargado
+            // 2. Lógica para asegurar que Leaflet esté completamente cargado e inicializado
             function checkAndInitMap() {
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     // CRÍTICO: Usamos un pequeño retraso para permitir que el DOM se asiente
                     setTimeout(() => {
                         initMap();
-                        // Forzar el redimensionamiento del mapa DESPUÉS de la inicialización
-                        if (map) {
-                            map.invalidateSize();
-                        }
-                        console.log("Leaflet/Mapa inicializado correctamente con corrección de tamaño e iconos.");
-                    }, 100); // 100ms de retraso para asegurar el renderizado
+                        console.log("Leaflet/Mapa inicializado correctamente.");
+                    }, 150); // Aumento el retraso a 150ms para mayor seguridad.
                     
                 } else {
-                    // Reintentar en un ciclo de eventos posterior si L.map no está listo.
+                    // Reintentar si la librería no está lista.
                     setTimeout(checkAndInitMap, 50); 
                 }
             }
             
-            checkAndInitMap(); // Iniciar la verificación
+            checkAndInitMap(); // Iniciar la verificación del mapa
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
@@ -339,11 +357,16 @@
             });
 
             // ===============================================================
-            // Manejador del Botón de Pedido (USA FIREBASE)
+            // Manejador del Botón de Pedido
             // ===============================================================
             document.getElementById('request-trip-btn').addEventListener('click', async () => {
                 if (!currentPosition || !destinationCoords) {
                     displayMessage("Por favor, selecciona tanto el origen como el destino.", 'error');
+                    return;
+                }
+                
+                if (!isFirebaseReady) {
+                    displayMessage("Error: La base de datos no está disponible. No se puede guardar el pedido.", 'error');
                     return;
                 }
 
@@ -355,21 +378,17 @@
                     destino_lat: destinationCoords.lat,
                     destino_lng: destinationCoords.lng,
                     destino_address: destinationAddress,
-                    // Otros campos iniciales
-                    cliente_ref: auth?.currentUser?.uid || 'anonimo', // Uso seguro de optional chaining
+                    cliente_ref: auth?.currentUser?.uid || 'anonimo',
                     timestamp: new Date().toISOString(),
                 };
 
-                // CRÍTICO: Llamar a la función de guardado de Firebase
+                // Llamar a la función de guardado de Firebase
                 const success = await window.savePedidoToFirestore(pedidoData);
 
                 if (success) {
                     displayMessage('✅ ¡Pedido enviado con éxito! Buscando chofer...', 'success');
-                    
-                    // Lógica de UI después del éxito
                     document.getElementById('request-trip-btn').disabled = true;
                     document.getElementById('request-trip-btn').innerHTML = 'Pedido Enviado. Esperando Asignación...';
-                    
                 }
             });
             // ===============================================================
