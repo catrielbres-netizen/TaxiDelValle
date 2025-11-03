@@ -90,7 +90,7 @@
         // CRÍTICO: Corrección del "rombo" de Leaflet con Data URI (SVG simple)
         if (typeof L !== 'undefined' && L.Icon) {
             delete L.Icon.Default.prototype._getIconUrl;
-            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>');
+            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="1" cy="1" r="5" fill="transparent"/></svg>');
             L.Icon.Default.mergeOptions({
                 iconUrl: dataUriSvg,
                 iconRetinaUrl: dataUriSvg,
@@ -333,7 +333,9 @@
                 }
             }
             
-            checkAndInitMap();
+            // CRÍTICO - CAMBIO APLICADO: Retrasamos la inicialización del mapa (checkAndInitMap) 
+            // 200ms para asegurar que el DOM y el CSS de la altura ya estén aplicados.
+            setTimeout(checkAndInitMap, 200);
 
             document.getElementById('locate-me-btn').addEventListener('click', () => {
                 if (map) {
