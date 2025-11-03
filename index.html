@@ -194,6 +194,7 @@
             }
 
             map = L.map('map').setView([-38.9517, -68.0617], 13); // Centrado inicial
+            window.map = map; // Hacemos el mapa global para facilitar la depuración
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
@@ -298,15 +299,33 @@
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
                     
                     initMap();
-                    console.log("Leaflet: Mapa creado. Forzando el tamaño...");
+                    console.log("Leaflet: Mapa creado. Iniciando bucle de forzado de tamaño...");
 
-                    // Solución CRÍTICA de timing: Forzar el re-cálculo de tamaño
-                    setTimeout(() => {
-                        if (map) {
-                            map.invalidateSize();
-                            console.log("Leaflet: invalidateSize() forzado. El mapa debe ser visible ahora.");
+                    // CRÍTICO: Bucle de invalidación forzada con requestAnimationFrame
+                    let attempts = 0;
+                    const maxAttempts = 100; // Intentaremos hasta 100 frames
+                    const mapElement = document.getElementById('map');
+
+                    const forceResize = () => {
+                        if (map && attempts < maxAttempts) {
+                            map.invalidateSize({ pan: false });
+                            
+                            // Si el contenedor ya tiene un ancho, es probable que esté bien.
+                            if (mapElement && mapElement.offsetWidth > 0 && mapElement.offsetHeight > 0) {
+                                console.log(`Leaflet: invalidateSize() confirmado y exitoso en intento ${attempts}.`);
+                                // Terminamos el bucle aquí
+                            } else {
+                                attempts++;
+                                // Si no está listo, intentamos de nuevo en el próximo frame de animación
+                                requestAnimationFrame(forceResize);
+                            }
                         }
-                    }, 300); 
+                    };
+
+                    // Damos un respiro inicial y luego iniciamos el bucle de resize
+                    setTimeout(() => {
+                        requestAnimationFrame(forceResize);
+                    }, 50); 
                     
                 } else {
                     // Reintenta la inicialización si la librería no está lista.
