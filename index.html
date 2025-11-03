@@ -85,6 +85,21 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // CRÍTICO: Solución para el error del "rombo" de Leaflet por imágenes faltantes.
+        // Esto reemplaza las rutas relativas de los iconos por defecto con un Data URI (un SVG).
+        if (typeof L !== 'undefined' && L.Icon) {
+            delete L.Icon.Default.prototype._getIconUrl;
+
+            // Simple SVG de un círculo transparente para forzar la carga del icono
+            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>');
+
+            L.Icon.Default.mergeOptions({
+                iconUrl: dataUriSvg,
+                iconRetinaUrl: dataUriSvg,
+                shadowUrl: dataUriSvg,
+            });
+        }
+
         let map;
         let originMarker;
         let destinationMarker;
@@ -193,7 +208,7 @@
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
 
-            // Icono de origen (azul)
+            // Icono de origen (azul, usando Data URI SVG)
             const originIcon = L.icon({
                 iconUrl: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#3b82f6" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>'),
                 iconSize: [32, 32],
@@ -201,7 +216,7 @@
                 popupAnchor: [0, -28]
             });
 
-            // Icono de destino (rojo)
+            // Icono de destino (rojo, usando Data URI SVG)
             const destinationIcon = L.icon({
                 iconUrl: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>'),
                 iconSize: [32, 32],
@@ -306,7 +321,7 @@
                         if (map) {
                             map.invalidateSize();
                         }
-                        console.log("Leaflet/Mapa inicializado correctamente con corrección de tamaño.");
+                        console.log("Leaflet/Mapa inicializado correctamente con corrección de tamaño e iconos.");
                     }, 100); // 100ms de retraso para asegurar el renderizado
                     
                 } else {
