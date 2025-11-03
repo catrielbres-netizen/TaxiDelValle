@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE />
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -80,13 +80,12 @@
     
     <!-- Script Principal de la Aplicación y Lógica del Mapa -->
     <script type="module">
-        // Importaciones de Firebase (solución robusta para evitar "Script error" y usar ES Modules)
+        // Importaciones de Firebase 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // CRÍTICO: Solución para el error del "rombo" de Leaflet por imágenes faltantes.
-        // Esto reemplaza las rutas relativas de los iconos por defecto con un Data URI (un SVG).
+        // CRÍTICO: Corrección del "rombo" de Leaflet con Data URI (SVG simple)
         if (typeof L !== 'undefined' && L.Icon) {
             delete L.Icon.Default.prototype._getIconUrl;
             const dataUriSvg = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>');
@@ -107,7 +106,7 @@
         // Global Firebase instances and status
         let db = null;
         let auth = null;
-        let isFirebaseReady = false; // Nuevo: Bandera de estado de Firebase
+        let isFirebaseReady = false; 
 
         // Función para mostrar mensajes de estado
         function displayMessage(message, type = 'info') {
@@ -115,7 +114,6 @@
             statusDiv.textContent = message;
             statusDiv.className = 'px-4 py-3 font-semibold text-center text-sm border-b shadow-sm';
 
-            // Resetting classes
             statusDiv.classList.remove('bg-red-100', 'text-red-800', 'border-red-200', 'bg-green-100', 'text-green-800', 'border-green-200', 'bg-indigo-100', 'text-indigo-800', 'border-indigo-200');
 
             if (type === 'error') {
@@ -128,18 +126,17 @@
         }
 
         // ====================================================================
-        // INICIALIZACIÓN DE FIREBASE (AHORA MÁS ROBUSTA)
+        // INICIALIZACIÓN DE FIREBASE
         // ====================================================================
 
         const initializeFirebase = async () => {
-            // Variables globales proporcionadas por el entorno (Canvas)
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
             const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
             
             if (!firebaseConfigRaw) {
-                console.warn("Firebase: Configuración (__firebase_config) NO encontrada. Las funciones de base de datos están deshabilitadas.");
-                displayMessage("⚠️ Mapa listo. Base de datos (pedidos) desactivada. (Falta Configuración)", 'error');
+                console.warn("Firebase: Configuración NO encontrada. Funciones DB deshabilitadas.");
+                displayMessage("⚠️ Mapa cargando. Base de datos (pedidos) desactivada. (Falta Configuración)", 'error');
                 isFirebaseReady = false;
                 return;
             }
@@ -151,29 +148,26 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // Autenticación
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
                 }
 
-                console.log("Firebase: Inicialización exitosa. Usuario UID:", auth.currentUser.uid);
+                console.log("Firebase: Inicialización exitosa.");
                 isFirebaseReady = true;
                 displayMessage("✅ Mapa interactivo y servicios de pedido listos.", 'success');
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                displayMessage("⚠️ Error al conectar la base de datos. Mapa funcional, pero pedidos deshabilitados.", 'error');
+                displayMessage("⚠️ Error al conectar la base de datos. Pedidos deshabilitados.", 'error');
                 isFirebaseReady = false;
             } finally {
-                // Aseguramos que el botón refleje el estado de Firebase
                 updateRequestButton();
             }
         };
 
-        // Función global para guardar el pedido en Firestore (accesible por el botón)
         window.savePedidoToFirestore = async function(pedidoData) {
-            if (!isFirebaseReady || !db || !auth || !auth.currentUser) {
+            if (!isFirebaseReady || !auth || !auth.currentUser) {
                 displayMessage("Error: La base de datos no está disponible. No se pudo enviar el pedido.", 'error');
                 return false;
             }
@@ -181,15 +175,13 @@
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
             try {
-                // Usamos la ruta pública para que los choferes (otros usuarios) puedan ver el pedido
                 const collectionPath = `artifacts/${appId}/public/data/pedidos`;
-                const docRef = await addDoc(collection(db, collectionPath), {
+                await addDoc(collection(db, collectionPath), {
                     ...pedidoData,
                     userId: auth.currentUser.uid,
                     createdAt: new Date().toISOString(),
                     estado: "PENDIENTE"
                 });
-                console.log("Pedido guardado con ID:", docRef.id);
                 return true;
             } catch (e) {
                 console.error("Error guardando el pedido en Firestore: ", e);
@@ -199,40 +191,32 @@
         };
 
         // ====================================================================
-        // FIN: INICIALIZACIÓN DE FIREBASE
+        // INICIALIZACIÓN DEL MAPA
         // ====================================================================
 
-
-        // Función para inicializar el mapa Leaflet
         function initMap() {
-            // Verificamos si Leaflet se cargó correctamente antes de proceder
-            if (typeof L.map !== 'function') {
-                console.error("Leaflet no se ha cargado correctamente.");
+            const mapElement = document.getElementById('map');
+            if (!mapElement || typeof L.map !== 'function') {
+                console.error("CRÍTICO: El elemento #map o la librería Leaflet no están disponibles.");
                 return;
             }
 
-            map = L.map('map').setView([-38.9517, -68.0617], 13); // Centrado en Neuquén (ejemplo)
+            map = L.map('map').setView([-38.9517, -68.0617], 13); // Centrado inicial
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
 
-            // Icono de origen (azul, usando Data URI SVG)
-            const originIcon = L.icon({
-                iconUrl: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#3b82f6" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>'),
+            // Iconos personalizados con Data URI (SVG)
+            const createCustomIcon = (color) => L.icon({
+                iconUrl: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>`),
                 iconSize: [32, 32],
                 iconAnchor: [16, 32],
                 popupAnchor: [0, -28]
             });
-
-            // Icono de destino (rojo, usando Data URI SVG)
-            const destinationIcon = L.icon({
-                iconUrl: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>'),
-                iconSize: [32, 32],
-                iconAnchor: [16, 32],
-                popupAnchor: [0, -28]
-            });
+            const originIcon = createCustomIcon('#3b82f6'); // Azul
+            const destinationIcon = createCustomIcon('#ef4444'); // Rojo
 
             // 1. Manejo del Origen (Geolocalización)
             map.locate({ setView: true, maxZoom: 16 });
@@ -248,7 +232,6 @@
                         .bindPopup("Ubicación de Origen (Tú)").openPopup();
                 }
 
-                // Reverse Geocoding para obtener la dirección de origen
                 reverseGeocode(latlng, 'origin-display', (address) => {
                     document.getElementById('origin-display').textContent = address;
                     updateRequestButton();
@@ -256,9 +239,9 @@
             });
 
             map.on('locationerror', (e) => {
-                console.error("Error de geolocalización:", e.message);
-                // Si la geolocalización falla, simplemente centramos el mapa, no es un error fatal
-                displayMessage(isFirebaseReady ? "✅ Mapa y DB listos. Selecciona el origen manualmente." : "⚠️ DB Offline. Selecciona el origen manualmente.", isFirebaseReady ? 'success' : 'error');
+                console.warn("Error de geolocalización:", e.message);
+                const msg = isFirebaseReady ? "✅ Mapa listo. Selecciona Origen manualmente." : "⚠️ DB Offline. Selecciona Origen manualmente.";
+                displayMessage(msg, isFirebaseReady ? 'success' : 'error');
             });
 
             // 2. Manejo del Destino (Clic en el Mapa)
@@ -273,7 +256,6 @@
                         .bindPopup("Destino").openPopup();
                 }
 
-                // Reverse Geocoding para obtener la dirección de destino
                 reverseGeocode(latlng, 'destination-address', (address) => {
                     destinationAddress = address;
                     document.getElementById('destination-address').value = address;
@@ -281,12 +263,8 @@
                     updateRequestButton();
                 });
             });
-            
-            // Forzar el redimensionamiento del mapa DESPUÉS de la inicialización
-            map.invalidateSize();
         }
 
-        // Simulación de Reverse Geocoding (Usando un servicio externo o mock)
         async function reverseGeocode(latlng, elementId, callback) {
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`;
             
@@ -296,7 +274,6 @@
                 const address = data.display_name || `Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`;
                 callback(address);
             } catch (error) {
-                console.error("Error en Geocoding:", error);
                 callback(`Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`);
             }
         }
@@ -310,17 +287,15 @@
                 if (isFirebaseReady) {
                     btn.disabled = false;
                     btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Solicitar Viaje Ahora</span>';
-                    btn.classList.remove('disabled:bg-indigo-300');
-                    btn.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+                    btn.classList.replace('disabled:bg-indigo-300', 'bg-indigo-500');
+                    btn.classList.add('hover:bg-indigo-600');
                 } else {
-                    // Listo para pedir, pero la DB no está disponible
-                    btn.disabled = true; // Deshabilitamos ya que guardar el pedido es esencial
+                    btn.disabled = true;
                     btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> DB Desactivada. Pedido NO disponible.</span>';
                     btn.classList.add('disabled:bg-indigo-300');
                     btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
                 }
             } else {
-                // Faltan coordenadas
                 btn.disabled = true;
                 btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Selecciona Origen y Destino</span>';
                 btn.classList.add('disabled:bg-indigo-300');
@@ -328,22 +303,31 @@
             }
         }
 
-        // Inicialización y Manejadores de Eventos
+        // ===============================================================
+        // LÓGICA DE INICIALIZACIÓN FINAL CON RETARDO CRÍTICO
+        // ===============================================================
         document.addEventListener('DOMContentLoaded', () => {
-            // 1. Inicializar Firebase (lo primero, para establecer isFirebaseReady)
             initializeFirebase();
 
-            // 2. Lógica para asegurar que Leaflet esté completamente cargado e inicializado
             function checkAndInitMap() {
+                // Comprobación de Leaflet
                 if (typeof L !== 'undefined' && typeof L.map === 'function') {
-                    // CRÍTICO: Usamos un pequeño retraso para permitir que el DOM se asiente
+                    
+                    // 1. Inicializar el mapa
+                    initMap();
+                    console.log("Leaflet: Mapa creado. Esperando 300ms para forzar el tamaño...");
+
+                    // 2. CRÍTICO: Invalida el tamaño después de un retardo generoso.
+                    // Esto asegura que el iFrame haya terminado de calcular todas las dimensiones del DOM.
                     setTimeout(() => {
-                        initMap();
-                        console.log("Leaflet/Mapa inicializado correctamente.");
-                    }, 150); // Aumento el retraso a 150ms para mayor seguridad.
+                        if (map) {
+                            map.invalidateSize();
+                            console.log("Leaflet: invalidateSize() forzado. El mapa debe ser visible ahora.");
+                        }
+                    }, 300); 
                     
                 } else {
-                    // Reintentar si la librería no está lista.
+                    // Reintenta la inicialización si la librería no está lista.
                     setTimeout(checkAndInitMap, 50); 
                 }
             }
@@ -356,21 +340,11 @@
                 }
             });
 
-            // ===============================================================
-            // Manejador del Botón de Pedido
-            // ===============================================================
             document.getElementById('request-trip-btn').addEventListener('click', async () => {
-                if (!currentPosition || !destinationCoords) {
-                    displayMessage("Por favor, selecciona tanto el origen como el destino.", 'error');
-                    return;
-                }
-                
-                if (!isFirebaseReady) {
-                    displayMessage("Error: La base de datos no está disponible. No se puede guardar el pedido.", 'error');
+                if (!currentPosition || !destinationCoords || !isFirebaseReady) {
                     return;
                 }
 
-                // Construir el objeto de datos del pedido
                 const pedidoData = {
                     origen_lat: currentPosition.lat,
                     origen_lng: currentPosition.lng,
@@ -382,7 +356,6 @@
                     timestamp: new Date().toISOString(),
                 };
 
-                // Llamar a la función de guardado de Firebase
                 const success = await window.savePedidoToFirestore(pedidoData);
 
                 if (success) {
@@ -391,7 +364,6 @@
                     document.getElementById('request-trip-btn').innerHTML = 'Pedido Enviado. Esperando Asignación...';
                 }
             });
-            // ===============================================================
         });
     </script>
 </body>
