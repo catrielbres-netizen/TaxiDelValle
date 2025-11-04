@@ -1,473 +1,586 @@
-<!DOCTYPE html>
+   <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vista del Chofer: Taxi del Valle</title>
-    <!-- Carga de Tailwind CSS -->
+    <title>Pedido de Taxi del Valle</title>
+    <!-- Incluye Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Carga de React y Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Firebase Imports: Agregamos query y where para filtros -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, setDoc, serverTimestamp, setLogLevel, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Exponer módulos de Firebase al scope global para que el código Babel los use
-        window.firebase = {
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-            getFirestore, doc, onSnapshot, collection, setDoc, serverTimestamp, setLogLevel,
-            query, where // Módulos para consultas avanzadas
-        };
-
-        // setLogLevel('debug'); // Activación de logs para diagnóstico
-    </script>
+    
+    <!-- SDK de TomTom (SOLO CSS) -->
+    <link rel="stylesheet" type="text/css" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.1/maps-sdk.css" />
     
     <style>
         body { font-family: 'Inter', sans-serif; }
-        /* Animación de carga */
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            border-top: 4px solid #10b981; /* Verde es el color del chofer */
-            border-radius: 50%;
-            width: 32px;
-            height: 32px;
-            animation: spin 1s linear infinite;
+        
+        /* Estilo para el contenedor del mapa */
+        #map {
+            height: 350px; 
+            width: 100%;
+            border-radius: 0.75rem; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            cursor: crosshair; /* Indica que se puede seleccionar un punto */
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        
+        /* Estilos para el botón deshabilitado */
+        .btn-disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        /* Estilos para el botón activo (Color del valle) */
+        .btn-active {
+            background-color: #FBBF24; /* Amber-400 */
+            color: #1F2937; /* Gris Oscuro */
+            cursor: pointer;
+            opacity: 1;
+            transition: background-color 0.2s;
+        }
+        .btn-active:hover:not(:disabled) {
+             background-color: #F59E0B; /* Amber-500 */
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <div id="root"></div>
+<body class="bg-gray-100 min-h-screen p-4 flex items-start justify-center">
 
-    <script type="text/babel">
-        // =================================================================
-        // CONFIGURACIÓN INICIAL Y AUTENTICACIÓN
-        // =================================================================
+    <div id="appContainer" class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 md:p-8 mt-4">
+
+        <!-- Header con el estilo solicitado -->
+        <header class="bg-amber-500 text-white p-4 rounded-lg mb-6 shadow-md">
+            <h1 class="text-3xl font-extrabold text-center text-gray-900">
+                Taxi del Valle
+            </h1>
+            <p id="authStatus" class="text-center text-sm mt-1 text-gray-700">
+                Conectando...
+            </p>
+            <p id="userIdDisplay" class="text-xs text-gray-700 mt-1 truncate text-center">
+                ID Cliente: ...
+            </p>
+        </header>
         
-        const { useState, useEffect } = React;
-        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, 
-                getFirestore, doc, onSnapshot, collection, setDoc, serverTimestamp, 
-                query, where } = window.firebase;
+        <!-- Contenedor del Mapa -->
+        <div id="map" class="mb-4"></div>
 
-        // Variables Globales del Entorno Canvas
-        const safeParseConfig = () => {
-            try {
-                return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-            } catch (e) {
-                console.error("Error parsing __firebase_config:", e);
-                return {};
-            }
-        };
+        <h2 class="text-xl font-bold text-gray-900 mb-4 text-center">
+            Selecciona tu Destino en el Mapa
+        </h2>
 
-        const firebaseConfig = safeParseConfig();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-taxi-app';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // =================================================================
-        // COMPONENTES DE VISTA
-        // =================================================================
-
-        // -----------------------------------------------------------------
-        // Utilidades
-        // -----------------------------------------------------------------
-        const LucideIcon = ({ name, className }) => {
-            useEffect(() => {
-                lucide.createIcons();
-            }, [name]);
+        <!-- Formulario principal con ID para JS -->
+        <form id="rideForm" class="space-y-4">
             
-            return (
-                <i className={className}>
-                    <svg data-lucide={name} width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </i>
-            );
-        };
-        
-        const formatCurrency = (amount) => {
-            return `$${(amount || 0).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
-        };
-        
-        // -----------------------------------------------------------------
-        // Componente: Lista de Pedidos Pendientes
-        // -----------------------------------------------------------------
-        const AvailableTripsList = ({ trips, onTakeTrip }) => {
-            if (trips.length === 0) {
-                return (
-                    <div className="text-center p-6 bg-white rounded-xl shadow-inner mt-4">
-                        <LucideIcon name="check-circle" className="w-8 h-8 mx-auto text-teal-500 mb-2" />
-                        <p className="text-gray-600 font-semibold">No hay pedidos disponibles en este momento.</p>
-                        <p className="text-sm text-gray-400">¡A esperar!</p>
-                    </div>
-                );
-            }
-
-            return (
-                <div className="space-y-4">
-                    {trips.map(trip => (
-                        <div key={trip.ID_PEDIDO} className="bg-white p-4 rounded-xl shadow-lg border border-gray-200">
-                            <div className="flex justify-between items-start">
-                                <h3 className="font-bold text-lg text-gray-800 flex items-center">
-                                    <LucideIcon name="map-pin" className="w-5 h-5 mr-2 text-teal-600" />
-                                    Nuevo Pedido
-                                </h3>
-                                <span className="text-sm font-bold text-green-600 bg-green-100 px-3 py-1 rounded-full">
-                                    {formatCurrency(trip.FARE_SIMULATED)}
-                                </span>
-                            </div>
-                            
-                            <p className="text-sm text-gray-500 mt-2">
-                                <span className="font-semibold text-gray-700">Origen:</span> {trip.ORIGEN_DIRECCION}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                                <span className="font-semibold text-gray-700">Destino:</span> {trip.DESTINO_DIRECCION}
-                            </p>
-
-                            <p className="text-xs text-gray-400 mt-2">
-                                Cliente: {trip.CLIENTE_REF_DNI} | Tel: {trip.phone}
-                            </p>
-
-                            <button
-                                onClick={() => onTakeTrip(trip.ID_PEDIDO)}
-                                className="mt-4 w-full p-3 bg-teal-600 text-white rounded-lg font-semibold hover:bg-teal-700 transition duration-300 transform hover:scale-[1.01] shadow-md"
-                            >
-                                <LucideIcon name="car" className="w-5 h-5 mr-2 inline-block" />
-                                Tomar Pedido
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            );
-        };
-        
-        // -----------------------------------------------------------------
-        // Componente: Viaje Activo
-        // -----------------------------------------------------------------
-        const ActiveTripMonitor = ({ trip, onMarkArrival, onFinishTrip, isProcessing }) => {
-            const getStatusDisplay = (status) => {
-                let text, color;
-                switch (status) {
-                    case 'ASIGNADO':
-                        text = "En Camino al Origen";
-                        color = "blue";
-                        break;
-                    case 'LLEGADA AL ORIGEN':
-                        text = "Cliente Esperando";
-                        color = "orange";
-                        break;
-                    default:
-                        text = "Desconocido";
-                        color = "gray";
-                }
-                return { text, colorClass: `bg-${color}-100 text-${color}-600` };
-            };
-
-            const statusInfo = getStatusDisplay(trip.ESTADO);
-
-            return (
-                <div className="space-y-4 bg-white p-6 rounded-xl shadow-2xl border-t-4 border-teal-500">
-                    <h2 className="text-2xl font-bold text-gray-800">Mi Viaje Activo</h2>
-                    
-                    <div className="p-3 rounded-lg font-semibold text-center border-2 shadow-sm"
-                         style={{ backgroundColor: statusInfo.colorClass.split('-')[0] === 'blue' ? '#dbeafe' : '#ffeccb' }}>
-                        <span className={`text-lg font-extrabold text-${statusInfo.color}-800`}>{statusInfo.text}</span>
-                    </div>
-
-                    <div className="space-y-3">
-                        <TripDetail icon="circle-dot" title="Origen" address={trip.ORIGEN_DIRECCION} color="green" />
-                        <TripDetail icon="flag" title="Destino" address={trip.DESTINO_DIRECCION} color="red" />
-                    </div>
-
-                    <p className="text-sm text-gray-500 pt-2">Cliente: {trip.CLIENTE_REF_DNI} | Pedido ID: {trip.ID_PEDIDO.substring(0, 8)}...</p>
-
-                    {/* Botones de Acción según el estado */}
-                    {trip.ESTADO === 'ASIGNADO' && (
-                        <button
-                            onClick={() => onMarkArrival(trip.ID_PEDIDO)}
-                            disabled={isProcessing}
-                            className={`w-full p-4 bg-blue-600 text-white rounded-xl font-bold transition duration-300 shadow-lg ${isProcessing ? 'bg-gray-400' : 'hover:bg-blue-700'}`}
-                        >
-                            <LucideIcon name="bell" className="w-5 h-5 mr-2 inline-block" />
-                            {isProcessing ? 'Procesando...' : 'Marcar: ¡Llegué al Origen!'}
-                        </button>
-                    )}
-                    
-                    {trip.ESTADO === 'LLEGADA AL ORIGEN' && (
-                        <button
-                            onClick={() => onFinishTrip(trip.ID_PEDIDO)}
-                            disabled={isProcessing}
-                            className={`w-full p-4 bg-teal-600 text-white rounded-xl font-bold transition duration-300 shadow-lg ${isProcessing ? 'bg-gray-400' : 'hover:bg-teal-700'}`}
-                        >
-                            <LucideIcon name="dollar-sign" className="w-5 h-5 mr-2 inline-block" />
-                            {isProcessing ? 'Finalizando...' : 'Finalizar Viaje'}
-                        </button>
-                    )}
-                </div>
-            );
-        };
-        
-        // -----------------------------------------------------------------
-        // Componente Auxiliar para Detalles de Viaje
-        // -----------------------------------------------------------------
-        const TripDetail = ({ icon, title, address, color }) => (
-            <div className="flex items-start p-3 bg-gray-50 rounded-lg border">
-                <LucideIcon name={icon} className={`w-5 h-5 mt-1 mr-3 text-${color}-500 flex-shrink-0`} />
+            <!-- Origen (Geolocalización) -->
+            <fieldset class="border p-4 rounded-lg">
+                <legend class="text-sm font-semibold text-gray-700 px-2">1. Origen (Tú)</legend>
+                
                 <div>
-                    <p className="text-xs font-medium text-gray-400">{title}</p>
-                    <p className="font-semibold text-gray-700">{address}</p>
+                    <label for="origen" class="block text-sm font-medium text-gray-700 mb-1">
+                        Tu Ubicación Actual (Auto-detectada)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="origen" 
+                        name="origen" 
+                        disabled 
+                        placeholder="Obteniendo ubicación..."
+                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100"
+                    >
+                    <input type="hidden" id="origen_lat" name="origen_lat">
+                    <input type="hidden" id="origen_lon" name="origen_lon">
+                </div>
+
+                <!-- Campo de Descripción Adicional -->
+                <div class="mt-4">
+                    <label for="origen_description" class="block text-sm font-medium text-gray-700 mb-1">
+                        Descripción de Ubicación (Ej: Frente al árbol)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="origen_description" 
+                        name="origen_description" 
+                        placeholder="Detalles para que el chofer te ubique fácilmente."
+                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500"
+                    >
+                </div>
+            </fieldset>
+
+            <!-- Destino (Selección en Mapa) -->
+            <fieldset class="border p-4 rounded-lg">
+                <legend class="text-sm font-semibold text-gray-700 px-2">2. Destino</legend>
+                <div>
+                    <label for="destino" class="block text-sm font-medium text-gray-700 mb-1">
+                        Destino Seleccionado (Click en Mapa) <span class="text-red-500">*</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        id="destino" 
+                        name="destino" 
+                        required 
+                        disabled 
+                        placeholder="Esperando selección en el mapa..."
+                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100"
+                    >
+                    <input type="hidden" id="destino_lat" name="destino_lat">
+                    <input type="hidden" id="destino_lon" name="destino_lon">
+                </div>
+            </fieldset>
+            
+            <!-- Estimación de Viaje -->
+            <div id="estimationBox" class="bg-blue-100 p-4 rounded-lg shadow-inner hidden">
+                <h3 class="font-bold text-lg text-blue-800 mb-2">Estimación del Viaje</h3>
+                <p class="text-sm text-gray-700">
+                    <strong class="text-blue-600">Tiempo Estimado:</strong> <span id="estimatedTime" class="font-medium">--</span>
+                </p>
+                <p class="text-sm text-gray-700">
+                    <strong class="text-blue-600">Precio Estimado:</strong> <span id="estimatedPrice" class="font-medium text-xl">--</span>
+                </p>
+            </div>
+
+
+            <!-- Campos Opcionales -->
+            <div class="flex space-x-4">
+                <div class="w-1/2">
+                    <label for="pasajeros" class="block text-sm font-medium text-gray-700 mb-1">Pasajeros</label>
+                    <input type="number" id="pasajeros" name="pasajeros" value="1" min="1" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                <div class="w-1/2">
+                    <label for="pago" class="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label>
+                    <select id="pago" name="pago" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500">
+                        <option value="cash">Efectivo</option>
+                        <option value="card">Tarjeta (Simulado)</option>
+                    </select>
                 </div>
             </div>
-        );
 
+            <div>
+                <label for="notas" class="block text-sm font-medium text-gray-700 mb-1">
+                    Notas Adicionales
+                </label>
+                <textarea 
+                    id="notas" 
+                    name="notas" 
+                    rows="2"
+                    placeholder="Ej: Necesito espacio para maletas."
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500 resize-none"
+                ></textarea>
+            </div>
 
-        // =================================================================
-        // COMPONENTE PRINCIPAL (App)
-        // =================================================================
-        const App = () => {
-            const [authState, setAuthState] = useState({ 
-                isLoading: true, 
-                db: null, 
-                auth: null, 
-                userId: null 
-            });
-            const [availableTrips, setAvailableTrips] = useState([]);
-            const [currentTrip, setCurrentTrip] = useState(null); // El viaje que el chofer ha tomado
-            const [isProcessing, setIsProcessing] = useState(false);
-            
-            const TRIP_COLLECTION_PATH = `artifacts/${appId}/public/data/tripRequests`;
+            <!-- Botón de Envío -->
+            <button 
+                type="submit" 
+                id="submitButton" 
+                disabled 
+                class="w-full mt-6 py-3 px-4 rounded-lg text-gray-900 font-semibold shadow-xl transition duration-200 ease-in-out btn-disabled"
+            >
+                <span id="buttonText">Selecciona Destino y Origen</span>
+            </button>
+        </form>
+    </div>
 
-            // 1. Inicialización de Firebase y Autenticación
-            useEffect(() => {
-                if (!firebaseConfig.apiKey) {
-                    console.error("Firebase config is missing.");
-                    setAuthState(prev => ({ ...prev, isLoading: false }));
-                    return;
-                }
+    <!-- Contenedor para mensajes (Modal) -->
+    <div id="messageBox" class="fixed inset-0 bg-gray-800 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+        <div id="messageContent" class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full text-center">
+            <!-- El contenido se inyecta con JS -->
+        </div>
+    </div>
+    
+    <!-- SDK de TomTom (JavaScript) -->
+    <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.1/maps-sdk.min.js"></script>
 
-                try {
-                    const app = initializeApp(firebaseConfig);
-                    const auth = getAuth(app);
-                    const db = getFirestore(app);
-                    
-                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                        if (!user) {
-                            try {
-                                if (initialAuthToken) {
-                                    await signInWithCustomToken(auth, initialAuthToken);
-                                } else {
-                                    await signInAnonymously(auth);
-                                }
-                            } catch (error) {
-                                console.error("Firebase auth error:", error);
-                            }
-                        }
-                        
-                        if (auth.currentUser) {
-                             const userId = auth.currentUser.uid;
-                             // En el contexto del Chofer, es MUY importante mostrar el ID
-                             console.log("Chofer UID:", userId); 
-                             setAuthState({ isLoading: false, db, auth, userId });
-                        }
-                    });
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, updateDoc, collection, query, where, addDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-                    return () => unsubscribe();
-                } catch (e) {
-                    console.error("Failed to initialize Firebase:", e);
-                    setAuthState(prev => ({ ...prev, isLoading: false }));
-                }
-            }, []);
-            
-            // 2. Monitoreo de Viaje ACTIVO (SL_MI_VIAJE_ACTIVO)
-            useEffect(() => {
-                if (!authState.db || !authState.userId) return;
+        // Establecer nivel de log para depuración de Firestore
+        setLogLevel('Debug');
 
-                const db = authState.db;
-                const userId = authState.userId;
-                
-                // Consulta: Chofer asignado = mi userId, y el estado NO ES FINALIZADO o CANCELLED
-                const activeQuery = query(
-                    collection(db, TRIP_COLLECTION_PATH),
-                    where("CHOFER_ASIGNADO_REF", "==", userId),
-                    where("ESTADO", "in", ["ASIGNADO", "LLEGADA AL ORIGEN"])
-                );
+        // === CONFIGURACIÓN GLOBAL ===
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Clave API de TomTom
+        const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT";
+        
+        // Estado Global
+        let firebaseApp, db, auth;
+        let currentUserId = null;
+        let map = null;
+        let originMarker = null;
+        let destinationMarker = null;
 
-                const unsubscribe = onSnapshot(activeQuery, (snapshot) => {
-                    if (snapshot.docs.length > 0) {
-                        const trip = { ID_PEDIDO: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-                        setCurrentTrip(trip);
-                        console.log("Viaje activo detectado:", trip.ESTADO);
-                    } else {
-                        setCurrentTrip(null); // No hay viaje activo
-                    }
-                }, (error) => {
-                    console.error("Error monitoring active trip:", error);
-                });
-
-                return () => unsubscribe();
-            }, [authState.db, authState.userId]); 
-
-            // 3. Monitoreo de Pedidos PENDIENTES (SL_PEDIDOS_DISPONIBLES)
-            useEffect(() => {
-                if (!authState.db || currentTrip) return; // Solo buscar si no tengo un viaje activo
-
-                const db = authState.db;
-                
-                // Consulta: Estado = PENDING
-                const pendingQuery = query(
-                    collection(db, TRIP_COLLECTION_PATH),
-                    where("ESTADO", "==", "PENDING")
-                    // No se usa orderBy ni limit para mantener la simplicidad y evitar errores de índice
-                );
-
-                const unsubscribe = onSnapshot(pendingQuery, (snapshot) => {
-                    const trips = snapshot.docs.map(doc => ({
-                        ID_PEDIDO: doc.id,
-                        ...doc.data()
-                    }));
-                    setAvailableTrips(trips);
-                }, (error) => {
-                    console.error("Error monitoring pending trips:", error);
-                });
-
-                return () => unsubscribe();
-            }, [authState.db, currentTrip]); 
-            
-            // Lógica de Acciones (similar a las de AppSheet)
-            
-            // 4. TOMAR_PEDIDO
-            const handleTakeTrip = async (tripId) => {
-                if (!authState.db || !authState.userId) return;
-                setIsProcessing(true);
-                
-                try {
-                    const tripRef = doc(authState.db, TRIP_COLLECTION_PATH, tripId);
-                    
-                    // Asegurarse de que nadie más lo haya tomado justo antes
-                    // Esto es una simplificación; AppSheet manejaría mejor la concurrencia.
-                    // Aquí, simplemente actualizamos.
-                    await setDoc(tripRef, { 
-                        ESTADO: 'ASIGNADO', 
-                        CHOFER_ASIGNADO_REF: authState.userId 
-                    }, { merge: true });
-                    
-                    // Forzamos el cambio de estado local para que se active el monitoreo de currentTrip
-                    setCurrentTrip({ ID_PEDIDO: tripId, ESTADO: 'ASIGNADO' });
-
-                } catch (error) {
-                    console.error("Error taking trip:", error);
-                    // Sustitución de alert
-                    console.log("Error al tomar el viaje. Intente nuevamente."); 
-                } finally {
-                    setIsProcessing(false);
-                }
-            };
-            
-            // 5. MARCAR_LLEGADA
-            const handleMarkArrival = async (tripId) => {
-                if (!authState.db) return;
-                setIsProcessing(true);
-                
-                try {
-                    const tripRef = doc(authState.db, TRIP_COLLECTION_PATH, tripId);
-                    await setDoc(tripRef, { ESTADO: 'LLEGADA AL ORIGEN' }, { merge: true });
-                } catch (error) {
-                    console.error("Error marking arrival:", error);
-                } finally {
-                    setIsProcessing(false);
-                }
-            };
-            
-            // 6. FINALIZAR_VIAJE
-            const handleFinishTrip = async (tripId) => {
-                if (!authState.db) return;
-                setIsProcessing(true);
-                
-                try {
-                    const tripRef = doc(authState.db, TRIP_COLLECTION_PATH, tripId);
-                    
-                    // En un flujo real, aquí AppSheet abriría un formulario para liquidación (COSTO_FINAL_PESOS, etc.)
-                    // Aquí, simplemente marcamos el viaje como finalizado.
-                    await setDoc(tripRef, { ESTADO: 'FINALIZADO' }, { merge: true });
-                    
-                    // El listener debería detectar esto y poner currentTrip a null
-                    setCurrentTrip(prev => ({...prev, ESTADO: 'FINALIZADO'})); 
-                    
-                } catch (error) {
-                    console.error("Error finishing trip:", error);
-                } finally {
-                    setIsProcessing(false);
-                }
-            };
-
-            if (authState.isLoading) {
-                return (
-                    <div className="flex justify-center items-center h-screen">
-                        <div className="spinner mr-3"></div>
-                        <p className="text-lg text-gray-700">Conectando con la base de datos...</p>
-                    </div>
-                );
-            }
-
-            return (
-                <div className="max-w-xl mx-auto p-4 bg-gray-100 min-h-screen">
-                    <header className="text-center mb-6 pt-4">
-                        <LucideIcon name="car" className="w-8 h-8 mx-auto text-teal-600 mb-2" />
-                        <h1 className="text-3xl font-extrabold text-gray-900">Módulo Chofer</h1>
-                        <p className="text-sm text-gray-500 flex items-center justify-center">
-                            <LucideIcon name="user" className="w-4 h-4 mr-1"/> 
-                            ID de Chofer (para AppSheet): <span className="font-mono text-xs text-teal-700 bg-teal-100 p-1 rounded ml-1">{authState.userId}</span>
-                        </p>
-                    </header>
-                    
-                    {currentTrip ? (
-                        <ActiveTripMonitor 
-                            trip={currentTrip} 
-                            onMarkArrival={handleMarkArrival} 
-                            onFinishTrip={handleFinishTrip} 
-                            isProcessing={isProcessing}
-                        />
-                    ) : (
-                        <>
-                            <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Pedidos Disponibles</h2>
-                            <AvailableTripsList 
-                                trips={availableTrips} 
-                                onTakeTrip={handleTakeTrip} 
-                            />
-                        </>
-                    )}
-                    
-                    {(currentTrip && currentTrip.ESTADO === 'FINALIZADO') && (
-                         <div className="p-4 mt-6 rounded-xl border-2 border-teal-300 bg-teal-50">
-                            <p className="font-semibold text-center text-gray-700">
-                                Viaje Finalizado. ¡Buen trabajo!
-                            </p>
-                            <button
-                                onClick={() => setCurrentTrip(null)}
-                                className="mt-3 w-full p-3 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition duration-300"
-                            >
-                                <LucideIcon name="list-checks" className="w-5 h-5 mr-2 inline-block" />
-                                Ver Nuevos Pedidos
-                            </button>
-                        </div>
-                    )}
-                </div>
-            );
+        let originCoords = null; // {lat, lon} del cliente
+        let destinationCoords = null; // {lat, lon} del destino seleccionado
+        
+        // === REFERENCIAS DEL DOM ===
+        const authStatus = document.getElementById('authStatus');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const form = document.getElementById('rideForm');
+        const submitButton = document.getElementById('submitButton');
+        const buttonText = document.getElementById('buttonText');
+        const origenInput = document.getElementById('origen');
+        const origenLatInput = document.getElementById('origen_lat');
+        const origenLonInput = document.getElementById('origen_lon');
+        const destinoInput = document.getElementById('destino');
+        const destinoLatInput = document.getElementById('destino_lat');
+        const destinoLonInput = document.getElementById('destino_lon');
+        const estimationBox = document.getElementById('estimationBox');
+        const estimatedTime = document.getElementById('estimatedTime');
+        const estimatedPrice = document.getElementById('estimatedPrice');
+        
+        // --- Utilidades ---
+        const showMessage = (title, text, icon) => {
+            document.getElementById('messageContent').innerHTML = `
+                ${icon}
+                <h2 class="text-xl font-bold mt-3 text-gray-900">${title}</h2>
+                <p class="text-gray-600 mt-2">${text}</p>
+                <button onclick="window.closeMessage()" class="mt-4 py-2 px-4 bg-amber-500 text-gray-900 font-semibold rounded-lg hover:bg-amber-600 transition">Aceptar</button>
+            `;
+            document.getElementById('messageBox').classList.remove('hidden');
+            document.getElementById('messageBox').classList.add('flex');
         };
 
-        // Renderizado de la App
-        const rootElement = document.getElementById('root');
-        if (rootElement) {
-            ReactDOM.createRoot(rootElement).render(<App />);
-        }
+        window.closeMessage = () => {
+            document.getElementById('messageBox').classList.add('hidden');
+            document.getElementById('messageBox').classList.remove('flex');
+        };
+        
+        // --- 1. Inicialización de Firebase y Autenticación ---
 
+        const initializeFirebase = async () => {
+            if (!firebaseConfig) {
+                authStatus.textContent = 'Error: Configuración de Firebase no encontrada.';
+                return;
+            }
+
+            firebaseApp = initializeApp(firebaseConfig);
+            db = getFirestore(firebaseApp);
+            auth = getAuth(firebaseApp);
+
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Error de autenticación:", error);
+                authStatus.textContent = `Error: Falló la autenticación.`;
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUserId = user.uid;
+                    authStatus.textContent = 'Conectado. Listo para viajar.';
+                    userIdDisplay.textContent = `ID Cliente: ${currentUserId}`;
+                } else {
+                    authStatus.textContent = 'Desconectado.';
+                }
+            });
+        };
+        
+        // --- 2. Geolocalización y Mapa (TomTom) ---
+
+        /**
+         * Obtiene la ubicación del cliente y configura el origen.
+         */
+        const getClientLocation = () => {
+            origenInput.value = "Obteniendo ubicación...";
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        originCoords = { lat, lon };
+                        
+                        // Rellenar campos del formulario
+                        origenLatInput.value = lat;
+                        origenLonInput.value = lon;
+
+                        // Centrar mapa
+                        if (map) {
+                            const coords = [lon, lat]; // TomTom usa [lon, lat]
+                            map.setCenter(coords);
+                            map.setZoom(14);
+
+                            // Agregar marcador de origen (Rojo)
+                            if (originMarker) originMarker.remove();
+                            originMarker = new tt.Marker({ color: '#DC2626' }) 
+                                .setLngLat(coords)
+                                .addTo(map);
+                            
+                            // Obtener dirección aproximada para el input
+                            reverseGeocode(lat, lon, (address) => {
+                                origenInput.value = address || "Ubicación detectada (coordenadas)";
+                            });
+                        }
+                        checkButtonState();
+                    },
+                    (error) => {
+                        console.warn("Error de Geolocalización:", error.message);
+                        origenInput.value = "Ubicación denegada o fallida.";
+                        showMessage("Permiso Necesario", "Permite la geolocalización para establecer tu origen.", `
+                            <svg class="mx-auto h-12 w-12 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                        `);
+                        checkButtonState();
+                    }
+                );
+            } else {
+                origenInput.value = "Geolocalización no soportada.";
+                checkButtonState();
+            }
+        };
+
+        /**
+         * Inicializa el mapa y los listeners de clic.
+         */
+        const initializeMap = () => {
+            const defaultLocation = [-58.3816, -34.6037]; // Buenos Aires [lon, lat]
+            
+            try {
+                map = tt.map({
+                    key: TOMTOM_API_KEY,
+                    container: 'map',
+                    center: defaultLocation,
+                    zoom: 12
+                });
+                
+                // Listener para seleccionar el destino en el mapa
+                map.on('click', (e) => {
+                    const lat = e.lngLat.lat;
+                    const lon = e.lngLat.lng;
+                    
+                    setDestination({ lat, lon });
+                });
+
+                // Obtener ubicación del cliente al cargar el mapa
+                map.on('load', getClientLocation);
+
+            } catch (error) {
+                console.error("Error inicializando TomTom:", error);
+                showMessage("Error de Mapa", "No se pudo inicializar el mapa. Intenta recargar.", `
+                    <svg class="mx-auto h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `);
+            }
+        };
+        
+        /**
+         * Establece el destino basado en las coordenadas del clic.
+         */
+        const setDestination = (coords) => {
+            destinationCoords = coords;
+            
+            destinoLatInput.value = coords.lat;
+            destinoLonInput.value = coords.lon;
+            destinoInput.value = "Buscando dirección...";
+
+            // Agregar marcador de destino (Azul)
+            if (destinationMarker) destinationMarker.remove();
+            destinationMarker = new tt.Marker({ color: '#1E40AF' }) 
+                .setLngLat([coords.lon, coords.lat])
+                .addTo(map);
+            
+            // Obtener dirección
+            reverseGeocode(coords.lat, coords.lon, (address) => {
+                destinoInput.value = address || `Destino seleccionado en (${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)})`;
+            });
+            
+            // Recalcular estimación
+            calculateRouteAndEstimate();
+        };
+
+        /**
+         * Realiza Reverse Geocoding para obtener la dirección postal.
+         */
+        const reverseGeocode = (lat, lon, callback) => {
+            // Usamos una simulación ya que el servicio completo requiere más configuración y llamadas al API externo.
+            // En un entorno real, usaríamos tt.services.reverseGeocode()
+            
+            // Simulación de dirección
+            const simulatedAddress = `Calle Falsa #123, Zona ${Math.floor(Math.random() * 10)}`;
+            callback(simulatedAddress);
+        };
+        
+        
+        // --- 3. Estimación de Viaje ---
+        
+        /**
+         * Simula la llamada al API de ruteo de TomTom para obtener tiempo y distancia.
+         */
+        const calculateRouteAndEstimate = () => {
+            if (!originCoords || !destinationCoords) {
+                estimationBox.classList.add('hidden');
+                checkButtonState();
+                return;
+            }
+            
+            estimationBox.classList.remove('hidden');
+            estimatedTime.textContent = 'Calculando...';
+            estimatedPrice.textContent = 'Calculando...';
+            
+            // Simulación de datos de ruta (ej. TomTom route service)
+            // TomTom devuelve tiempo en segundos y distancia en metros.
+            const simulatedDistanceMeters = 5000 + Math.floor(Math.random() * 10000); // 5km a 15km
+            const simulatedTimeSeconds = 300 + Math.floor(Math.random() * 900); // 5 min a 20 min
+            
+            // Mostrar los resultados después de un breve retraso (simulación de latencia)
+            setTimeout(() => {
+                
+                // Cálculo del precio (Fijo: $5.00 base + $1.50 por kilómetro)
+                const distanceKm = simulatedDistanceMeters / 1000;
+                const basePrice = 5.00;
+                const ratePerKm = 1.50;
+                const finalPrice = (basePrice + (distanceKm * ratePerKm)).toFixed(2);
+                
+                // Formato del tiempo
+                const timeMinutes = Math.ceil(simulatedTimeSeconds / 60);
+                const timeString = `${timeMinutes} min`;
+                
+                estimatedTime.textContent = timeString;
+                estimatedPrice.textContent = `$${finalPrice}`;
+                
+                // Actualizar el estado del botón
+                checkButtonState();
+                
+            }, 800);
+        };
+        
+        // --- 4. Lógica de Validación y Envío ---
+
+        /**
+         * Verifica si el formulario es válido y activa el botón.
+         */
+        const checkButtonState = () => {
+            const isOriginSet = !!originCoords;
+            const isDestinationSet = !!destinationCoords;
+            const isPriceCalculated = estimatedPrice.textContent !== '--' && estimatedPrice.textContent !== 'Calculando...';
+            
+            const isValid = isOriginSet && isDestinationSet && isPriceCalculated;
+            
+            submitButton.disabled = !isValid;
+            
+            if (isValid) {
+                submitButton.classList.remove('btn-disabled');
+                submitButton.classList.add('btn-active');
+                buttonText.textContent = `Pedir Taxi - ${estimatedPrice.textContent}`;
+            } else {
+                submitButton.classList.remove('btn-active');
+                submitButton.classList.add('btn-disabled');
+                
+                if (!isOriginSet) {
+                    buttonText.textContent = 'Esperando ubicación de origen...';
+                } else if (!isDestinationSet) {
+                    buttonText.textContent = 'Selecciona un destino en el mapa';
+                } else if (!isPriceCalculated) {
+                    buttonText.textContent = 'Calculando precio...';
+                } else {
+                    buttonText.textContent = 'Completa la información';
+                }
+            }
+        };
+
+        // Escuchar cambios en los campos que podrían afectar el cálculo (aunque la mayoría es por mapa)
+        document.getElementById('origen_description').addEventListener('input', checkButtonState);
+
+
+        /**
+         * Maneja el envío del formulario y guarda la solicitud en Firestore.
+         */
+        const handleSubmit = async (e) => {
+            e.preventDefault(); 
+            
+            if (submitButton.disabled || !currentUserId) {
+                showMessage("Error", "Asegúrate de tener un origen, un destino seleccionado y estar conectado.", `
+                    <svg class="mx-auto h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `);
+                return;
+            }
+            
+            submitButton.disabled = true;
+            buttonText.textContent = 'Enviando Solicitud...';
+            submitButton.classList.add('opacity-70', 'animate-pulse');
+
+            try {
+                const requestsCollectionRef = collection(db, `artifacts/${appId}/public/data/ride_requests`);
+                
+                const requestData = {
+                    userId: currentUserId,
+                    origen_lat: originCoords.lat,
+                    origen_lon: originCoords.lon,
+                    destino_lat: destinationCoords.lat,
+                    destino_lon: destinationCoords.lon,
+                    origen_address: origenInput.value,
+                    origen_description: document.getElementById('origen_description').value,
+                    destino_address: destinoInput.value,
+                    pasajeros: document.getElementById('pasajeros').value,
+                    pago_method: document.getElementById('pago').value,
+                    notas: document.getElementById('notas').value,
+                    estimated_time: estimatedTime.textContent,
+                    estimated_price: estimatedPrice.textContent,
+                    status: 'pending', // Estado inicial para que el chofer lo vea
+                    createdAt: new Date().toISOString(),
+                };
+
+                await addDoc(requestsCollectionRef, requestData);
+
+                const successIcon = `
+                    <svg class="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `;
+                showMessage("¡Pedido Enviado!", `Tu taxi está siendo buscado. Precio: ${estimatedPrice.textContent}.`, successIcon);
+                
+                // Resetear UI para nuevo pedido
+                if (destinationMarker) destinationMarker.remove();
+                destinationCoords = null;
+                destinoInput.value = "Esperando selección en el mapa...";
+                destinoLatInput.value = "";
+                destinoLonInput.value = "";
+                estimationBox.classList.add('hidden');
+                
+                submitButton.classList.remove('opacity-70', 'animate-pulse');
+                
+                // Forzar el recálculo (no hará nada hasta que se seleccione destino)
+                checkButtonState(); 
+
+            } catch (error) {
+                console.error("Error al enviar el pedido:", error);
+                submitButton.classList.remove('opacity-70', 'animate-pulse');
+                checkButtonState();
+                showMessage("Error de Envío", "Hubo un error al guardar tu pedido. Intenta de nuevo.", `
+                    <svg class="mx-auto h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `);
+            }
+        };
+
+        form.addEventListener('submit', handleSubmit);
+        
+        // --- 5. Sistema de Carga del SDK (Solución al error de 'tt') ---
+
+        /**
+         * Espera hasta que el SDK de TomTom (el objeto 'tt') esté disponible.
+         */
+        const waitForTomTomSDK = () => {
+            if (typeof tt !== 'undefined' && tt.map) {
+                initializeMap();
+                initializeFirebase();
+            } else {
+                setTimeout(waitForTomTomSDK, 100);
+            }
+        };
+
+        // Iniciar la aplicación
+        waitForTomTomSDK();
     </script>
 </body>
 </html>
