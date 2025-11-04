@@ -1,523 +1,592 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
-// Iconos de Lucide
-import { MapPin, Target, Car, User, Phone, DollarSign, Clock, Truck, CheckCircle, XCircle, Map } from 'lucide-react'; 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vista del Cliente: Taxi del Valle</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Carga de React y Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-// Variables globales proporcionadas por el entorno (MANDATORIO)
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'client-app-id';
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, addDoc, setDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Exponer módulos de Firebase al scope global para que el código Babel los use
+        window.firebase = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, onSnapshot, collection, addDoc, setDoc, serverTimestamp, setLogLevel
+        };
 
-// Helper para parsear la configuración de Firebase de forma segura
-const safeParseConfig = () => {
-    if (typeof __firebase_config === 'string' && __firebase_config.trim() !== '') {
-        try {
-            return JSON.parse(__firebase_config);
-        } catch (e) {
-            console.error("Error al parsear la configuración de Firebase:", e);
-            return {};
-        }
-    }
-    return {};
-};
-const firebaseConfig = safeParseConfig();
-
-
-// --- CONFIGURACIÓN DE TOMTOM ---
-// Clave de TomTom proporcionada por el usuario
-const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT"; 
-const COUNTRY_CODE = 'ARG'; // Asumimos Argentina por el contexto del proyecto
-
-// Estado simulado del cliente (para demostrar la funcionalidad)
-const DEFAULT_CLIENT_NAME = 'Juan Pérez';
-const DEFAULT_CLIENT_PHONE = '+54 9 11 1234 5678';
-const DEFAULT_FARE = '$ 2500 ARS'; // Tarifa simulada
-
-// --- UTILS DE FIREBASE Y ESTADO DE LA APP ---
-const initialAppState = {
-  db: null,
-  auth: null,
-  userId: null,
-  isAuthReady: false,
-};
-
-// Componente principal de la aplicación del Cliente
-const App = () => {
-  const [app, setApp] = useState(initialAppState);
-  const [loading, setLoading] = useState(true);
-  
-  // Datos del formulario
-  const [pickup, setPickup] = useState(''); // Inicializado vacío para forzar autocompletado
-  const [dropoff, setDropoff] = useState(''); // Inicializado vacío para forzar autocompletado
-  const [clientName, setClientName] = useState(DEFAULT_CLIENT_NAME);
-  const [clientPhone, setClientPhone] = useState(DEFAULT_CLIENT_PHONE);
-  
-  // Estado de la solicitud de viaje
-  const [currentTripId, setCurrentTripId] = useState(null);
-  const [currentTripStatus, setCurrentTripStatus] = useState('IDLE'); // IDLE, PENDING, ACCEPTED, WAITING_PICKUP, EN_ROUTE, COMPLETED, CANCELLED
-  const [driverDetails, setDriverDetails] = useState(null);
-
-  // ESTADOS PARA EL AUTOCOMPLETADO DE TOMTOM
-  const [pickupSuggestions, setPickupSuggestions] = useState([]);
-  const [dropoffSuggestions, setDropoffSuggestions] = useState([]);
-  const [isSearchingPickup, setIsSearchingPickup] = useState(false);
-  const [isSearchingDropoff, setIsSearchingDropoff] = useState(false);
-
-  // 1. Inicialización de Firebase y Autenticación
-  useEffect(() => {
-    try {
-      if (Object.keys(firebaseConfig).length === 0) {
-        console.error("Firebase configuration is missing or invalid. Check the config string.");
-        setLoading(false);
-        return;
-      }
-      
-      const firebaseApp = initializeApp(firebaseConfig);
-      const dbInstance = getFirestore(firebaseApp);
-      const authInstance = getAuth(firebaseApp);
-
-      setApp(prev => ({ ...prev, db: dbInstance, auth: authInstance }));
-
-      const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-        if (user) {
-          const userId = user.uid;
-          setApp(prev => ({ ...prev, userId, isAuthReady: true }));
-          console.log(`[Client] Authenticated. User ID: ${userId}`);
-        } else {
-          try {
-            if (initialAuthToken) {
-              await signInWithCustomToken(authInstance, initialAuthToken);
-            } else {
-              await signInAnonymously(authInstance);
-            }
-          } catch (e) {
-            console.error("[Client] Error during authentication:", e);
-          } finally {
-             const tempUserId = authInstance.currentUser?.uid || crypto.randomUUID();
-             setApp(prev => ({ ...prev, userId: tempUserId, isAuthReady: true }));
-          }
-        }
-        setLoading(false);
-      });
-
-      return () => unsubscribe();
-    } catch (e) {
-      console.error("[Client] Failed to initialize Firebase:", e);
-      setLoading(false);
-    }
-  }, [initialAuthToken]);
-
-  // --- FUNCIÓN DE BÚSQUEDA DE SUGERENCIAS TOMTOM ---
-  const fetchSuggestions = useCallback(async (query, setSuggestions, setLoading) => {
-    if (TOMTOM_API_KEY === "" || !query || query.length < 3) {
-        setSuggestions([]);
-        return;
-    }
+        // Activación de logs para diagnóstico
+        // setLogLevel('debug'); 
+    </script>
     
-    setLoading(true);
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Animación de carga */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
 
-    // Lógica de reintento con backoff exponencial
-    for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-            const encodedQuery = encodeURIComponent(query);
-            const apiUrl = `https://api.tomtom.com/search/2/search/${encodedQuery}.json?key=${TOMTOM_API_KEY}&countrySet=${COUNTRY_CODE}&limit=5`;
+    <script type="text/babel">
+        // =================================================================
+        // CONFIGURACIÓN INICIAL Y AUTENTICACIÓN
+        // =================================================================
+        
+        const { useState, useEffect, useCallback } = React;
+        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, onSnapshot, collection, addDoc, serverTimestamp, setDoc } = window.firebase;
 
-            const response = await fetch(apiUrl);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-            const data = await response.json();
-            
-            const suggestions = data.results
-                ? data.results.map(result => result.address.freeformAddress)
-                : [];
-            
-            setSuggestions(suggestions);
-            setLoading(false);
-            return; // Éxito, salimos de la función
-
-        } catch (error) {
-            console.error(`[TomTom API] Intento ${attempt + 1} fallido:`, error);
-            if (attempt < 2) {
-                const delay = Math.pow(2, attempt) * 1000;
-                await new Promise(res => setTimeout(res, delay));
-            } else {
-                setSuggestions(['Error de conexión. Intente una búsqueda más específica.']);
-                setLoading(false);
+        // Variables Globales del Entorno Canvas
+        const safeParseConfig = () => {
+            try {
+                return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+            } catch (e) {
+                console.error("Error parsing __firebase_config:", e);
+                return {};
             }
-        }
-    }
-  }, []);
+        };
 
-  // --- EFECTOS DE DEBOUNCE PARA AUTOCOMPLETADO ---
-  
-  // Debounce para Origen
-  useEffect(() => {
-    const handler = setTimeout(() => {
-        fetchSuggestions(pickup, setPickupSuggestions, setIsSearchingPickup);
-    }, 500);
+        const firebaseConfig = safeParseConfig();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-taxi-app';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-    return () => clearTimeout(handler);
-  }, [pickup, fetchSuggestions]);
+        // API Key de TomTom (Actualizada con tu clave)
+        const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT";
+        const DEFAULT_FARE = 500; // Tarifa simulada en pesos
 
-  // Debounce para Destino
-  useEffect(() => {
-    const handler = setTimeout(() => {
-        fetchSuggestions(dropoff, setDropoffSuggestions, setIsSearchingDropoff);
-    }, 500);
+        // =================================================================
+        // COMPONENTES DE VISTA
+        // =================================================================
 
-    return () => clearTimeout(handler);
-  }, [dropoff, fetchSuggestions]);
+        // -----------------------------------------------------------------
+        // Utilidades
+        // -----------------------------------------------------------------
+        const LucideIcon = ({ name, className }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+            
+            // Renderiza el SVG contenedor para el icono de Lucide
+            return (
+                <i className={className}>
+                    <svg data-lucide={name} width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </i>
+            );
+        };
 
+        const debounce = (func, delay) => {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+        };
 
-  // 2. Monitoreo de la solicitud de viaje activa
-  useEffect(() => {
-    if (!app.db || !currentTripId) return;
-
-    const tripRequestDocRef = doc(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests', currentTripId);
-
-    const unsubscribe = onSnapshot(tripRequestDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setCurrentTripStatus(data.tripStatus || data.status); 
-        
-        if (data.driverName) {
-            setDriverDetails({
-                name: data.driverName,
-                id: data.driverId,
+        // -----------------------------------------------------------------
+        // Formulario de Solicitud de Viaje
+        // -----------------------------------------------------------------
+        const RequestForm = ({ isSubmitting, onSubmit, tomTomSuggestions, onSearch, setFormData }) => {
+            const [localData, setLocalData] = useState({
+                name: '',
+                phone: '',
+                pickupSearch: '',
+                dropoffSearch: '',
             });
-        }
-        
-        console.log(`[Client] Trip Status Update: ${data.tripStatus || data.status}`);
+            const [focusedField, setFocusedField] = useState(null);
 
-      } else {
-        if (currentTripStatus !== 'IDLE') {
-            setCurrentTripStatus('CANCELLED'); 
-        }
-      }
-    }, (error) => {
-      console.error("[Client] Error monitoring trip status:", error);
-    });
-
-    return () => unsubscribe();
-  }, [app.db, currentTripId, currentTripStatus]);
-
-  // Función para solicitar un viaje
-  const requestTrip = useCallback(async () => {
-    if (!app.db || currentTripStatus !== 'IDLE') return;
-
-    setCurrentTripStatus('PENDING');
-
-    const requestsCollectionRef = collection(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests');
-
-    const newTripData = {
-        clientId: app.userId,
-        clientName,
-        clientPhone,
-        pickup,
-        dropoff,
-        fare: DEFAULT_FARE,
-        status: 'PENDING', 
-        tripStatus: 'PENDING', 
-        timestamp: Date.now(),
-    };
-
-    try {
-        const docRef = await addDoc(requestsCollectionRef, newTripData);
-        setCurrentTripId(docRef.id);
-    } catch (e) {
-      console.error("[Client] Error creating trip request:", e);
-      setCurrentTripStatus('IDLE');
-    }
-  }, [app.db, app.userId, clientName, clientPhone, pickup, dropoff, currentTripStatus]);
-  
-  // Función para limpiar el estado después de un viaje finalizado/cancelado
-  const resetTrip = () => {
-      setCurrentTripId(null);
-      setCurrentTripStatus('IDLE');
-      setDriverDetails(null);
-  };
-  
-  // Función para cancelar el viaje (solo si está pendiente)
-  const cancelTrip = useCallback(async () => {
-      if (!app.db || !currentTripId || currentTripStatus !== 'PENDING') return;
-
-      const tripRequestDocRef = doc(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests', currentTripId);
-
-      try {
-          await deleteDoc(tripRequestDocRef);
-          setCurrentTripStatus('CANCELLED');
-          setCurrentTripId(null);
-      } catch (e) {
-           console.error("[Client] Error canceling trip:", e);
-      }
-  }, [app.db, currentTripId, currentTripStatus]);
-
-  // --- COMPONENTES DE VISTA ---
-  
-  const TripForm = () => (
-      <div className="space-y-4">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Detalles del Viaje</h2>
-          
-          {/* Origen */}
-          <div className="relative z-10">
-              <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
-                  <MapPin size={20} className="text-blue-500 mr-3 flex-shrink-0" />
-                  <input 
-                      type="text" 
-                      placeholder="Origen (Dirección de Recogida)"
-                      value={pickup}
-                      onChange={(e) => {
-                          setPickup(e.target.value);
-                          setPickupSuggestions([]);
-                      }}
-                      className="w-full bg-transparent outline-none text-gray-700 font-medium"
-                      required
-                  />
-                  {isSearchingPickup && pickup.length >= 3 && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
-              </div>
-              
-              {/* Sugerencias de Origen */}
-              {pickupSuggestions.length > 0 && (
-                  <ul className="absolute w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-40 overflow-y-auto">
-                      {pickupSuggestions.map((suggestion, index) => (
-                          <li
-                              key={index}
-                              onClick={() => {
-                                  setPickup(suggestion);
-                                  setPickupSuggestions([]);
-                              }}
-                              className="p-3 text-sm text-gray-800 cursor-pointer hover:bg-blue-100 transition duration-150"
-                          >
-                              {suggestion}
-                          </li>
-                      ))}
-                  </ul>
-              )}
-          </div>
-          
-          {/* Destino */}
-          <div className="relative z-0">
-              <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
-                  <Target size={20} className="text-red-500 mr-3 flex-shrink-0" />
-                  <input 
-                      type="text" 
-                      placeholder="Destino"
-                      value={dropoff}
-                      onChange={(e) => {
-                          setDropoff(e.target.value);
-                          setDropoffSuggestions([]);
-                      }}
-                      className="w-full bg-transparent outline-none text-gray-700 font-medium"
-                      required
-                  />
-                  {isSearchingDropoff && dropoff.length >= 3 && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
-              </div>
-              
-              {/* Sugerencias de Destino */}
-              {dropoffSuggestions.length > 0 && (
-                  <ul className="absolute w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-40 overflow-y-auto">
-                      {dropoffSuggestions.map((suggestion, index) => (
-                          <li
-                              key={index}
-                              onClick={() => {
-                                  setDropoff(suggestion);
-                                  setDropoffSuggestions([]);
-                              }}
-                              className="p-3 text-sm text-gray-800 cursor-pointer hover:bg-red-100 transition duration-150"
-                          >
-                              {suggestion}
-                          </li>
-                      ))}
-                  </ul>
-              )}
-          </div>
-
-          <h2 className="text-xl font-bold text-gray-800 pt-4 mb-4 border-t border-gray-200">Tu Contacto</h2>
-          
-          {/* Nombre */}
-          <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
-              <User size={20} className="text-gray-500 mr-3 flex-shrink-0" />
-              <input 
-                  type="text" 
-                  placeholder="Tu Nombre"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  className="w-full bg-transparent outline-none text-gray-700 font-medium"
-                  required
-              />
-          </div>
-          
-          {/* Teléfono */}
-          <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
-              <Phone size={20} className="text-gray-500 mr-3 flex-shrink-0" />
-              <input 
-                  type="tel" 
-                  placeholder="Teléfono de Contacto"
-                  value={clientPhone}
-                  onChange={(e) => setClientPhone(e.target.value)}
-                  className="w-full bg-transparent outline-none text-gray-700 font-medium"
-                  required
-              />
-          </div>
-          
-          {/* Tarifa Simulada */}
-          <div className="mt-6 p-4 bg-indigo-50 rounded-xl flex justify-between items-center">
-              <span className="text-lg font-bold text-indigo-700 flex items-center">
-                  <DollarSign size={20} className="mr-2"/> Tarifa Estimada
-              </span>
-              <span className="text-2xl font-extrabold text-indigo-800">{DEFAULT_FARE}</span>
-          </div>
-          
-          {/* Botón de Solicitud */}
-          <button
-              onClick={requestTrip}
-              disabled={currentTripStatus !== 'IDLE' || !pickup || !dropoff || pickup.length < 3 || dropoff.length < 3}
-              className={`w-full py-4 mt-6 rounded-xl font-bold text-white transition duration-300 transform hover:scale-[1.01] flex items-center justify-center ${
-                  currentTripStatus === 'IDLE' && pickup && dropoff && pickup.length >= 3 && dropoff.length >= 3
-                      ? 'bg-blue-600 hover:bg-blue-700 shadow-lg'
-                      : 'bg-gray-400 cursor-not-allowed'
-              }`}
-          >
-              <Car size={20} className="mr-2" />
-              {currentTripStatus === 'IDLE' ? 'Solicitar Viaje' : 'Viaje en Proceso...'}
-          </button>
-      </div>
-  );
-  
-  const StatusMonitor = () => {
-    let statusText = '';
-    let statusColor = 'bg-gray-500';
-    let icon = Clock;
-    let button = null;
-
-    switch (currentTripStatus) {
-        case 'PENDING':
-            statusText = 'Buscando Chofer...';
-            statusColor = 'bg-yellow-500';
-            icon = Clock;
-            button = (
-                <button
-                    onClick={cancelTrip}
-                    className="w-full py-2 mt-4 rounded-xl font-bold text-white bg-red-500 hover:bg-red-600 transition"
-                >
-                    Cancelar Solicitud
-                </button>
-            );
-            break;
-        case 'ACCEPTED':
-        case 'WAITING_PICKUP':
-            statusText = `Chofer Asignado: ${driverDetails?.name || 'Cargando...'}`;
-            statusColor = 'bg-indigo-600';
-            icon = Truck;
-            break;
-        case 'EN_ROUTE':
-            statusText = 'En Ruta a Destino';
-            statusColor = 'bg-green-600';
-            icon = Map;
-            break;
-        case 'FINALIZED':
-        case 'COMPLETED':
-            statusText = '¡Viaje Finalizado! Gracias.';
-            statusColor = 'bg-blue-600';
-            icon = CheckCircle;
-            button = (
-                <button
-                    onClick={resetTrip}
-                    className="w-full py-2 mt-4 rounded-xl font-bold text-white bg-blue-500 hover:bg-blue-600 transition"
-                >
-                    Nuevo Viaje
-                </button>
-            );
-            break;
-        case 'CANCELLED':
-        case 'REJECTED_BY_DRIVER':
-            statusText = 'Solicitud Cancelada/Rechazada. Intenta de nuevo.';
-            statusColor = 'bg-red-600';
-            icon = XCircle;
-            button = (
-                <button
-                    onClick={resetTrip}
-                    className="w-full py-2 mt-4 rounded-xl font-bold text-white bg-gray-500 hover:bg-gray-600 transition"
-                >
-                    Volver a Solicitar
-                </button>
-            );
-            break;
-        default:
-            return null; // Si es IDLE, no mostramos el monitor
-    }
-      
-    const CurrentIcon = icon;
-
-    return (
-        <div className="bg-white p-6 rounded-2xl shadow-2xl border-t-8 border-indigo-500 animate-pulse-fast">
-            <div className={`p-4 rounded-xl text-white font-bold text-center flex items-center justify-center mb-4 ${statusColor}`}>
-                <CurrentIcon size={24} className="mr-3"/>
-                <span className="text-lg">{statusText}</span>
-            </div>
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setLocalData(prev => ({ ...prev, [name]: value }));
+                
+                // Si el campo es de búsqueda, notificar al componente padre
+                if (name === 'pickupSearch' || name === 'dropoffSearch') {
+                    onSearch(name, value);
+                }
+            };
             
-            {driverDetails && (currentTripStatus === 'ACCEPTED' || currentTripStatus === 'WAITING_PICKUP' || currentTripStatus === 'EN_ROUTE') && (
-                <div className="space-y-2 p-3 bg-gray-50 rounded-xl">
-                    <p className="text-sm font-semibold text-gray-700 flex items-center"><User size={16} className="mr-2 text-indigo-500"/> Chofer: {driverDetails.name}</p>
-                    <p className="text-xs text-gray-500 flex items-center"><Truck size={16} className="mr-2 text-indigo-500"/> ID: {driverDetails.id}</p>
+            const handleSuggestionClick = (field, suggestion) => {
+                const searchField = field === 'pickup' ? 'pickupSearch' : 'dropoffSearch';
+                setLocalData(prev => ({ 
+                    ...prev, 
+                    [searchField]: suggestion.address,
+                }));
+                setFormData(prev => ({
+                    ...prev,
+                    [field + 'Location']: JSON.stringify(suggestion.position),
+                    [field + 'Address']: suggestion.address,
+                }));
+                setFocusedField(null); // Ocultar sugerencias
+            };
+
+            const isFormValid = localData.name.trim() !== '' && 
+                                localData.phone.trim() !== '' &&
+                                localData.pickupSearch.trim() !== '' &&
+                                localData.dropoffSearch.trim() !== '';
+
+            return (
+                <form onSubmit={e => onSubmit(e, localData)} className="space-y-4">
+                    <h2 className="text-xl font-semibold text-gray-700">¿A dónde vamos?</h2>
+                    
+                    {/* Campos de Búsqueda */}
+                    {['pickup', 'dropoff'].map(field => (
+                        <div key={field} className="relative">
+                            <label htmlFor={`${field}Search`} className="block text-sm font-medium text-gray-500">
+                                {field === 'pickup' ? 'Origen (Recogida)' : 'Destino'}
+                            </label>
+                            <div className="mt-1">
+                                <input
+                                    type="text"
+                                    name={`${field}Search`}
+                                    id={`${field}Search`}
+                                    value={localData[`${field}Search`]}
+                                    onChange={handleInputChange}
+                                    onFocus={() => setFocusedField(field)}
+                                    onBlur={() => setTimeout(() => setFocusedField(null), 150)} // Pequeño delay para permitir clic
+                                    placeholder={field === 'pickup' ? 'Ej: Av. Rivadavia 123' : 'Ej: Casa de Gobierno'}
+                                    className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
+                                />
+                            </div>
+
+                            {/* Sugerencias de TomTom */}
+                            {focusedField === field && tomTomSuggestions.length > 0 && (
+                                <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto">
+                                    {tomTomSuggestions.map((s, index) => (
+                                        <li 
+                                            key={index}
+                                            onMouseDown={() => handleSuggestionClick(field, s)} // Usar onMouseDown para capturar el click antes del onBlur
+                                            className="p-3 text-sm text-gray-800 hover:bg-indigo-50 cursor-pointer flex items-start"
+                                        >
+                                            <LucideIcon name="map-pin" className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-1 mr-2" />
+                                            {s.address}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    ))}
+                    
+                    {/* Campos de Contacto */}
+                    <div className="flex space-x-4">
+                        <div className="flex-1">
+                            <label htmlFor="name" className="block text-sm font-medium text-gray-500">
+                                Tu Nombre
+                            </label>
+                            <input
+                                type="text"
+                                name="name"
+                                id="name"
+                                value={localData.name}
+                                onChange={handleInputChange}
+                                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
+                                placeholder="Juan Pérez"
+                            />
+                        </div>
+                        <div className="flex-1">
+                            <label htmlFor="phone" className="block text-sm font-medium text-gray-500">
+                                Teléfono
+                            </label>
+                            <input
+                                type="tel"
+                                name="phone"
+                                id="phone"
+                                value={localData.phone}
+                                onChange={handleInputChange}
+                                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
+                                placeholder="2804xxxxxx"
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={isSubmitting || !isFormValid}
+                        className={`w-full flex items-center justify-center p-4 rounded-xl font-bold text-white transition duration-300 shadow-lg ${
+                            isSubmitting || !isFormValid 
+                                ? 'bg-gray-400 cursor-not-allowed' 
+                                : 'bg-indigo-600 hover:bg-indigo-700 transform hover:scale-[1.01]'
+                        }`}
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <div className="spinner mr-3"></div>
+                                Solicitando...
+                            </>
+                        ) : (
+                            <>
+                                <LucideIcon name="send" className="w-5 h-5 mr-2" />
+                                Solicitar Taxi Ahora (${DEFAULT_FARE})
+                            </>
+                        )}
+                    </button>
+                </form>
+            );
+        };
+
+        // -----------------------------------------------------------------
+        // Monitoreo de Estado del Viaje
+        // -----------------------------------------------------------------
+        const StatusMonitor = ({ tripData, onCancel }) => {
+            const getStatusDisplay = (status) => {
+                let text, icon, color;
+                switch (status) {
+                    case 'PENDING':
+                        text = "Buscando un Chofer disponible...";
+                        icon = "search";
+                        color = "yellow";
+                        break;
+                    case 'ASIGNADO':
+                        text = `Chofer ${tripData.CHOFER_ASIGNADO_REF} en camino.`;
+                        icon = "car";
+                        color = "green";
+                        break;
+                    case 'LLEGADA AL ORIGEN':
+                        text = "¡El Chofer ha llegado a su ubicación!";
+                        icon = "bell";
+                        color = "blue";
+                        break;
+                    case 'FINALIZADO':
+                        text = "Viaje Finalizado. ¡Gracias por viajar con nosotros!";
+                        icon = "check-circle";
+                        color = "indigo";
+                        break;
+                    case 'CANCELLED':
+                        text = "Viaje cancelado.";
+                        icon = "x-circle";
+                        color = "red";
+                        break;
+                    default:
+                        text = "Estado desconocido...";
+                        icon = "help-circle";
+                        color = "gray";
+                }
+
+                return { text, icon, colorClass: `text-${color}-600 bg-${color}-50 border-${color}-300` };
+            };
+
+            const statusInfo = getStatusDisplay(tripData.ESTADO);
+            const isFinished = tripData.ESTADO === 'FINALIZADO' || tripData.ESTADO === 'CANCELLED';
+
+            return (
+                <div className="space-y-4">
+                    <h2 className="text-xl font-bold text-gray-800 border-b pb-2">Estado de tu Viaje</h2>
+                    
+                    <div className={`p-4 rounded-xl border-2 shadow-md ${statusInfo.colorClass}`}>
+                        <div className="flex items-center">
+                            <LucideIcon name={statusInfo.icon} className={`w-6 h-6 mr-3 text-${statusInfo.color}-600`} />
+                            <p className={`font-semibold text-lg text-${statusInfo.color}-800`}>{statusInfo.text}</p>
+                        </div>
+                        {tripData.ESTADO === 'ASIGNADO' && (
+                            <p className="mt-2 text-sm text-gray-600 flex items-center">
+                                <LucideIcon name="map" className="w-4 h-4 mr-1"/>
+                                El chofer está en camino.
+                                <a 
+                                    href={`https://www.google.com/maps/dir/?api=1&destination=${tripData.DESTINO_DIRECCION}&travelmode=driving`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-indigo-600 hover:underline ml-2"
+                                >
+                                    Ver Mapa
+                                </a>
+                            </p>
+                        )}
+                        <p className="mt-2 text-sm text-gray-600">
+                             Pedido ID: <span className="font-mono text-xs text-gray-500">{tripData.ID_PEDIDO}</span>
+                        </p>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl shadow-inner border">
+                        <p className="text-sm font-medium text-gray-600">Origen:</p>
+                        <p className="font-semibold">{tripData.ORIGEN_DIRECCION}</p>
+                        <p className="text-sm font-medium text-gray-600 mt-2">Destino:</p>
+                        <p className="font-semibold">{tripData.DESTINO_DIRECCION}</p>
+                    </div>
+
+                    {!isFinished && (
+                        <button
+                            onClick={onCancel}
+                            className="w-full p-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition duration-300 transform hover:scale-[1.01]"
+                        >
+                            <LucideIcon name="x" className="w-5 h-5 mr-2 inline-block" />
+                            Cancelar Viaje
+                        </button>
+                    )}
+                    {isFinished && (
+                         <p className="text-sm text-center text-gray-500 pt-2">Puedes cerrar esta ventana.</p>
+                    )}
                 </div>
-            )}
-            
-            <div className="mt-4 space-y-2 text-sm text-gray-600">
-                <p className="flex items-center"><MapPin size={16} className="mr-2 text-blue-500"/> Origen: <span className="font-medium ml-1">{pickup}</span></p>
-                <p className="flex items-center"><Target size={16} className="mr-2 text-red-500"/> Destino: <span className="font-medium ml-1">{dropoff}</span></p>
-                <p className="flex items-center"><DollarSign size={16} className="mr-2 text-green-500"/> Tarifa: <span className="font-bold ml-1">{DEFAULT_FARE}</span></p>
-            </div>
-            
-            {button}
-        </div>
-    );
-  };
-  
-  // Vista de Carga
-  if (loading || !app.isAuthReady) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center p-6 bg-white rounded-xl shadow-lg">
-          <div className="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4 mx-auto"></div>
-          <p className="text-gray-600 font-semibold">Cargando aplicación y autenticando...</p>
-        </div>
-        <style jsx="true">{`
-          .loader {
-            border-top-color: #3b82f6; 
-            -webkit-animation: spinner 1.5s linear infinite;
-            animation: spinner 1.5s linear infinite;
-          }
-          @-webkit-keyframes spinner { 0% { -webkit-transform: rotate(0deg); } 100% { -webkit-transform: rotate(360deg); } }
-          @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    );
-  }
+            );
+        };
 
-  return (
-    <div className="min-h-screen bg-gray-50 font-[Inter] flex flex-col items-center p-4 sm:p-6">
-      <div className="w-full max-w-lg">
-        {/* Encabezado */}
-        <header className="text-center mb-6">
-          <Car size={40} className="text-indigo-600 mx-auto mb-2" />
-          <h1 className="text-3xl font-extrabold text-gray-900">Solicitar Viaje</h1>
-          <p className="text-sm text-gray-500 mt-1">ID Cliente: <span className="font-mono text-xs p-1 bg-gray-200 rounded">{app.userId}</span></p>
-        </header>
-        
-        {/* Contenido principal */}
-        <div className="p-6 bg-white rounded-2xl shadow-xl">
-            {currentTripStatus === 'IDLE' ? <TripForm /> : <StatusMonitor />}
-        </div>
-        
-        {/* Footer */}
-        <footer className="mt-10 text-center text-xs text-gray-400 p-4 border-t">
-            <p>Módulo de Cliente (Firebase Real-Time) | Geocodificación TomTom Integrada</p>
-        </footer>
-      </div>
-    </div>
-  );
-};
 
-export default App;
+        // =================================================================
+        // COMPONENTE PRINCIPAL (App)
+        // =================================================================
+        const App = () => {
+            const [authState, setAuthState] = useState({ 
+                isLoading: true, 
+                db: null, 
+                auth: null, 
+                userId: null 
+            });
+            const [tripData, setTripData] = useState(null); // null, or { ID_PEDIDO, ESTADO, ... }
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [formData, setFormData] = useState({
+                name: '',
+                phone: '',
+                pickupLocation: '',
+                pickupAddress: '',
+                dropoffLocation: '',
+                dropoffAddress: '',
+            });
+            const [tomTomSuggestions, setTomTomSuggestions] = useState([]);
+
+            // 1. Inicialización de Firebase y Autenticación
+            useEffect(() => {
+                if (!firebaseConfig.apiKey) {
+                    console.error("Firebase config is missing.");
+                    setAuthState(prev => ({ ...prev, isLoading: false }));
+                    return;
+                }
+
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    const auth = getAuth(app);
+                    const db = getFirestore(app);
+                    
+                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                        if (!user) {
+                            // Intenta sign-in con token o anónimo
+                            try {
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(auth, initialAuthToken);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                            } catch (error) {
+                                console.error("Firebase auth error:", error);
+                            }
+                        }
+                        
+                        // Si ya tenemos un usuario (autenticado o anónimo)
+                        if (auth.currentUser) {
+                             const userId = auth.currentUser.uid;
+                             setAuthState({ isLoading: false, db, auth, userId });
+                        }
+                    });
+
+                    return () => unsubscribe(); // Limpiar listener
+                } catch (e) {
+                    console.error("Failed to initialize Firebase:", e);
+                    setAuthState(prev => ({ ...prev, isLoading: false }));
+                }
+            }, []);
+
+            // 2. Monitoreo de Solicitud de Viaje (solo si hay un viaje en curso)
+            useEffect(() => {
+                if (!authState.db || !tripData || !tripData.ID_PEDIDO) return;
+
+                const db = authState.db;
+                const tripId = tripData.ID_PEDIDO;
+
+                // Path público donde el cliente escribe y el chofer lee
+                const tripRef = doc(db, `artifacts/${appId}/public/data/tripRequests`, tripId);
+                
+                console.log(`Monitoring trip: ${tripId}`);
+
+                const unsubscribe = onSnapshot(tripRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setTripData(prev => ({ ...prev, ...docSnap.data() }));
+                    } else {
+                        // El documento fue borrado (ej: el admin lo archivó) o cancelado.
+                        if (tripData.ESTADO !== 'FINALIZADO' && tripData.ESTADO !== 'CANCELLED') {
+                            setTripData(prev => ({...prev, ESTADO: 'CANCELLED'}));
+                        }
+                    }
+                }, (error) => {
+                    console.error("Error monitoring trip:", error);
+                    // Esto suele ser un error de permisos (403), pero el nuevo path público debería evitarlo.
+                });
+
+                return () => unsubscribe(); // Limpiar listener
+            }, [authState.db, tripData ? tripData.ID_PEDIDO : null]); 
+
+
+            // 3. Lógica de Autocompletado de TomTom
+            const fetchSuggestions = useCallback(debounce(async (query, field) => {
+                if (query.length < 3) {
+                    setTomTomSuggestions([]);
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5&countrySet=AR`);
+                    if (!response.ok) throw new Error('TomTom API request failed');
+
+                    const data = await response.json();
+                    
+                    const suggestions = data.results.map(result => ({
+                        address: result.address.freeformAddress,
+                        position: {
+                            lat: result.position.lat,
+                            lon: result.position.lon,
+                        }
+                    }));
+                    setTomTomSuggestions(suggestions);
+
+                } catch (error) {
+                    console.error("Error fetching TomTom suggestions:", error);
+                    setTomTomSuggestions([]);
+                }
+            }, 500), [TOMTOM_API_KEY]); // Debounce y memoize la función de búsqueda
+
+
+            const handleSearch = (name, value) => {
+                if (name === 'pickupSearch') {
+                    setFormData(prev => ({ ...prev, pickupAddress: value, pickupLocation: '' }));
+                    fetchSuggestions(value, 'pickup');
+                } else if (name === 'dropoffSearch') {
+                    setFormData(prev => ({ ...prev, dropoffAddress: value, dropoffLocation: '' }));
+                    fetchSuggestions(value, 'dropoff');
+                }
+            };
+            
+
+            // 4. Envío de Solicitud
+            const handleSubmit = async (e, localData) => {
+                e.preventDefault();
+                if (!authState.db || !formData.pickupLocation || !formData.dropoffLocation) {
+                    console.error("App not ready or locations incomplete.");
+                    return;
+                }
+
+                setIsSubmitting(true);
+                
+                const newTrip = {
+                    CLIENTE_REF_DNI: localData.name, // Usamos el nombre como ID temporal
+                    FECHA_HORA_PEDIDO: serverTimestamp(),
+                    ORIGEN_UBICACION: formData.pickupLocation,
+                    ORIGEN_DIRECCION: formData.pickupAddress,
+                    DESTINO_UBICACION: formData.dropoffLocation,
+                    DESTINO_DIRECCION: formData.dropoffAddress,
+                    TIPO_VIAJE: 'Standard',
+                    ESTADO: 'PENDING',
+                    CHOFER_ASIGNADO_REF: '', // Se llenará en AppSheet
+                    FARE_SIMULATED: DEFAULT_FARE,
+                };
+
+                try {
+                    // Guardar en la colección pública de solicitudes de viaje
+                    const requestsCollectionRef = collection(authState.db, `artifacts/${appId}/public/data/tripRequests`);
+                    const docRef = await addDoc(requestsCollectionRef, newTrip);
+                    
+                    // Almacenar el ID y estado inicial para monitoreo
+                    setTripData({
+                        ID_PEDIDO: docRef.id,
+                        ...newTrip
+                    });
+                    
+                } catch (error) {
+                    console.error("Error submitting trip:", error);
+                    alert("Error al solicitar el viaje. Intenta de nuevo."); // Usamos alert temporalmente solo para feedback inmediato al usuario
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            // 5. Cancelación de Viaje (Actualiza el documento público)
+            const handleCancel = async () => {
+                if (!authState.db || !tripData || !tripData.ID_PEDIDO) return;
+
+                const db = authState.db;
+                const tripId = tripData.ID_PEDIDO;
+
+                if (confirm("¿Estás seguro de que quieres cancelar el viaje?")) {
+                    try {
+                        const tripRef = doc(db, `artifacts/${appId}/public/data/tripRequests`, tripId);
+                        await setDoc(tripRef, { ESTADO: 'CANCELLED' }, { merge: true });
+                        setTripData(prev => ({ ...prev, ESTADO: 'CANCELLED' }));
+                    } catch (error) {
+                        console.error("Error cancelling trip:", error);
+                    }
+                }
+            };
+
+
+            if (authState.isLoading) {
+                return (
+                    <div className="flex justify-center items-center h-screen">
+                        <div className="spinner mr-3"></div>
+                        <p className="text-lg text-gray-700">Conectando con el servicio...</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-md mx-auto p-4 bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                    <header className="text-center mb-6">
+                        <LucideIcon name="map-pin" className="w-8 h-8 mx-auto text-indigo-600 mb-2" />
+                        <h1 className="text-3xl font-extrabold text-gray-900">TAXI DEL VALLE</h1>
+                        <p className="text-sm text-gray-500">Solicitud de Viaje</p>
+                    </header>
+                    
+                    {tripData && tripData.ID_PEDIDO && tripData.ESTADO !== 'FINALIZADO' && tripData.ESTADO !== 'CANCELLED' ? (
+                        <StatusMonitor tripData={tripData} onCancel={handleCancel} />
+                    ) : (
+                        <RequestForm 
+                            isSubmitting={isSubmitting} 
+                            onSubmit={handleSubmit} 
+                            tomTomSuggestions={tomTomSuggestions} 
+                            onSearch={handleSearch} 
+                            setFormData={setFormData}
+                        />
+                    )}
+                    
+                    {/* Mensaje de finalización o cancelación */}
+                    {(tripData && (tripData.ESTADO === 'FINALIZADO' || tripData.ESTADO === 'CANCELLED')) && (
+                        <div className={`p-4 mt-6 rounded-xl border-2 ${tripData.ESTADO === 'FINALIZADO' ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
+                            <p className="font-semibold text-center text-gray-700">
+                                {tripData.ESTADO === 'FINALIZADO' ? 'Viaje Completado' : 'Viaje Cancelado'}
+                            </p>
+                            <button
+                                onClick={() => setTripData(null)}
+                                className="mt-3 w-full p-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition duration-300"
+                            >
+                                <LucideIcon name="plus" className="w-5 h-5 mr-2 inline-block" />
+                                Solicitar Nuevo Viaje
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Renderizado de la App
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+            ReactDOM.createRoot(rootElement).render(<App />);
+        }
+
+    </script>
+</body>
+</html>
