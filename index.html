@@ -7,7 +7,6 @@ import { MapPin, Target, Car, User, Phone, DollarSign, Clock, Truck, CheckCircle
 
 // Variables globales proporcionadas por el entorno (MANDATORIO)
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'client-app-id';
-// FIX: Corregido el typo en el nombre de la variable de referencia
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // Helper para parsear la configuración de Firebase de forma segura
@@ -49,8 +48,8 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   
   // Datos del formulario
-  const [pickup, setPickup] = useState('Avenida Corrientes 800, Buenos Aires');
-  const [dropoff, setDropoff] = useState('Obelisco, Buenos Aires');
+  const [pickup, setPickup] = useState(''); // Inicializado vacío para forzar autocompletado
+  const [dropoff, setDropoff] = useState(''); // Inicializado vacío para forzar autocompletado
   const [clientName, setClientName] = useState(DEFAULT_CLIENT_NAME);
   const [clientPhone, setClientPhone] = useState(DEFAULT_CLIENT_PHONE);
   
@@ -107,11 +106,11 @@ const App = () => {
       console.error("[Client] Failed to initialize Firebase:", e);
       setLoading(false);
     }
-  }, [initialAuthToken]); // Se añade initialAuthToken como dependencia para consistencia
+  }, [initialAuthToken]);
 
   // --- FUNCIÓN DE BÚSQUEDA DE SUGERENCIAS TOMTOM ---
   const fetchSuggestions = useCallback(async (query, setSuggestions, setLoading) => {
-    if (TOMTOM_API_KEY === "YOUR_TOMTOM_API_KEY_AQUI" || !query || query.length < 3) {
+    if (TOMTOM_API_KEY === "" || !query || query.length < 3) {
         setSuggestions([]);
         return;
     }
@@ -122,7 +121,6 @@ const App = () => {
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
             const encodedQuery = encodeURIComponent(query);
-            // TomTom Search API (Fuzzy Search) - Limitamos a 5 resultados
             const apiUrl = `https://api.tomtom.com/search/2/search/${encodedQuery}.json?key=${TOMTOM_API_KEY}&countrySet=${COUNTRY_CODE}&limit=5`;
 
             const response = await fetch(apiUrl);
@@ -149,7 +147,7 @@ const App = () => {
             }
         }
     }
-  }, []); // Dependencias vacías para useCallback
+  }, []);
 
   // --- EFECTOS DE DEBOUNCE PARA AUTOCOMPLETADO ---
   
@@ -157,7 +155,7 @@ const App = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
         fetchSuggestions(pickup, setPickupSuggestions, setIsSearchingPickup);
-    }, 500); // Espera 500ms después de que el usuario deja de escribir
+    }, 500);
 
     return () => clearTimeout(handler);
   }, [pickup, fetchSuggestions]);
@@ -166,7 +164,7 @@ const App = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
         fetchSuggestions(dropoff, setDropoffSuggestions, setIsSearchingDropoff);
-    }, 500); // Espera 500ms después de que el usuario deja de escribir
+    }, 500);
 
     return () => clearTimeout(handler);
   }, [dropoff, fetchSuggestions]);
@@ -176,13 +174,11 @@ const App = () => {
   useEffect(() => {
     if (!app.db || !currentTripId) return;
 
-    // La solicitud de viaje está en la colección pública, monitoreamos los cambios
     const tripRequestDocRef = doc(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests', currentTripId);
 
     const unsubscribe = onSnapshot(tripRequestDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // Usar tripStatus si existe, sino el status principal
         setCurrentTripStatus(data.tripStatus || data.status); 
         
         if (data.driverName) {
@@ -194,16 +190,9 @@ const App = () => {
         
         console.log(`[Client] Trip Status Update: ${data.tripStatus || data.status}`);
 
-        // Manejar el final del viaje para resetear la vista
-        if (data.status === 'FINALIZED' || data.status === 'REJECTED_BY_DRIVER') {
-            // El usuario debe presionar un botón para resetear
-        }
-
       } else {
-        // Si el documento es eliminado por alguna razón, se resetea
         if (currentTripStatus !== 'IDLE') {
-            setCurrentTripStatus('CANCELLED'); // Forzar estado cancelado si se pierde la referencia
-            // Mantenemos currentTripId para mostrar el monitor de estado CANCELLED/REJECTED
+            setCurrentTripStatus('CANCELLED'); 
         }
       }
     }, (error) => {
@@ -228,8 +217,8 @@ const App = () => {
         pickup,
         dropoff,
         fare: DEFAULT_FARE,
-        status: 'PENDING', // Estado que el chofer monitorea
-        tripStatus: 'PENDING', // Estado de seguimiento del cliente
+        status: 'PENDING', 
+        tripStatus: 'PENDING', 
         timestamp: Date.now(),
     };
 
@@ -256,7 +245,6 @@ const App = () => {
       const tripRequestDocRef = doc(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests', currentTripId);
 
       try {
-          // Eliminamos el documento para que desaparezca de la cola del chofer
           await deleteDoc(tripRequestDocRef);
           setCurrentTripStatus('CANCELLED');
           setCurrentTripId(null);
@@ -281,12 +269,12 @@ const App = () => {
                       value={pickup}
                       onChange={(e) => {
                           setPickup(e.target.value);
-                          setPickupSuggestions([]); // Limpiar sugerencias al escribir
+                          setPickupSuggestions([]);
                       }}
                       className="w-full bg-transparent outline-none text-gray-700 font-medium"
                       required
                   />
-                  {isSearchingPickup && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
+                  {isSearchingPickup && pickup.length >= 3 && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
               </div>
               
               {/* Sugerencias de Origen */}
@@ -318,12 +306,12 @@ const App = () => {
                       value={dropoff}
                       onChange={(e) => {
                           setDropoff(e.target.value);
-                          setDropoffSuggestions([]); // Limpiar sugerencias al escribir
+                          setDropoffSuggestions([]);
                       }}
                       className="w-full bg-transparent outline-none text-gray-700 font-medium"
                       required
                   />
-                  {isSearchingDropoff && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
+                  {isSearchingDropoff && dropoff.length >= 3 && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
               </div>
               
               {/* Sugerencias de Destino */}
@@ -384,9 +372,9 @@ const App = () => {
           {/* Botón de Solicitud */}
           <button
               onClick={requestTrip}
-              disabled={currentTripStatus !== 'IDLE' || !pickup || !dropoff}
+              disabled={currentTripStatus !== 'IDLE' || !pickup || !dropoff || pickup.length < 3 || dropoff.length < 3}
               className={`w-full py-4 mt-6 rounded-xl font-bold text-white transition duration-300 transform hover:scale-[1.01] flex items-center justify-center ${
-                  currentTripStatus === 'IDLE' && pickup && dropoff
+                  currentTripStatus === 'IDLE' && pickup && dropoff && pickup.length >= 3 && dropoff.length >= 3
                       ? 'bg-blue-600 hover:bg-blue-700 shadow-lg'
                       : 'bg-gray-400 cursor-not-allowed'
               }`}
@@ -426,7 +414,7 @@ const App = () => {
         case 'EN_ROUTE':
             statusText = 'En Ruta a Destino';
             statusColor = 'bg-green-600';
-            icon = Map; // Se corrigió a Map de lucide-react
+            icon = Map;
             break;
         case 'FINALIZED':
         case 'COMPLETED':
