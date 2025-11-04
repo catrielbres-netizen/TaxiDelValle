@@ -1,582 +1,535 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Taxi del Valle - Pedido</title>
-    <!-- Carga de Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Fuente Inter para estética moderna -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- Carga de Iconos (Lucide Icons) -->
-    <script type="module">
-        import { createIcons, MapPin, LocateFixed, Car, Send, List, XCircle } from 'https://unpkg.com/lucide@latest/dist/esm/lucide.js';
-        createIcons({ icons: { MapPin, LocateFixed, Car, Send, List, XCircle } });
-    </script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
-        /* CRÍTICO: Aseguramos que el contenedor del mapa tenga una altura definida */
-        #map { height: 65vh; width: 100%; border-radius: 0 0 1rem 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-        .leaflet-container { z-index: 1; }
-        /* Estilos para el autocompletado */
-        .suggestion-item {
-            padding: 0.5rem 0.75rem;
-            cursor: pointer;
-            border-bottom: 1px solid #f3f4f6;
-            transition: background-color 0.15s;
-        }
-        .suggestion-item:hover {
-            background-color: #f0f9ff;
-        }
-        .suggestion-item:last-child {
-            border-bottom: none;
-        }
-    </style>
+import React, { useState, useEffect, useCallback } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+// Iconos de Lucide
+import { MapPin, Target, Car, User, Phone, DollarSign, Clock, Truck, CheckCircle, XCircle, Map } from 'lucide-react'; 
 
-    <!-- CRÍTICO: CARGA DE LEAFLET CSS EN EL HEAD -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-</head>
-<body class="min-h-screen antialiased">
-    <!-- Contenedor Principal -->
-    <div id="app-container" class="max-w-md mx-auto bg-white min-h-screen shadow-lg">
-        <!-- Header y Botón de Historial -->
-        <header class="p-4 bg-yellow-500 text-white flex justify-between items-center rounded-b-xl">
-            <h1 class="text-xl font-bold">Taxi del Valle <i data-lucide="car" class="inline-block w-6 h-6"></i></h1>
-            <button id="show-history-btn" class="bg-yellow-600 hover:bg-yellow-700 p-2 rounded-full shadow-md transition duration-150">
-                <i data-lucide="list" class="w-5 h-5"></i>
-            </button>
-        </header>
-        <!-- Banner de Bienvenida -->
-        <div id="status-message" class="px-4 py-3 bg-indigo-100 text-indigo-800 font-semibold text-center text-sm border-b border-indigo-200 shadow-sm">
-            Inicializando aplicación...
-        </div>
-        <!-- Area de la App (Mapa y Controles) -->
-        <main id="main-content" class="relative">
-            <!-- Contenedor del Mapa -->
-            <div id="map" class="mb-4"></div>
-            <!-- Botón de Geolocalización Flotante -->
-            <button id="locate-me-btn" class="absolute top-4 right-4 z-10 bg-white p-3 rounded-full shadow-lg border border-gray-200 hover:bg-gray-100 transition duration-150">
-                <i data-lucide="locate-fixed" class="w-5 h-5 text-indigo-600"></i>
-            </button>
-            <!-- Panel de Control y Formulario -->
-            <div class="px-4 pb-20">
-                <div class="space-y-4 p-4 bg-white rounded-xl shadow-lg border border-gray-100">
-                    <!-- Indicador de Origen -->
-                    <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
-                        <i data-lucide="locate-fixed" class="w-5 h-5 text-indigo-600 flex-shrink-0"></i>
-                        <div class="flex-grow">
-                            <label class="text-xs font-medium text-indigo-600">Origen (Recogida) - 
-                                <span class="text-xs font-bold text-red-500">Haga clic en el mapa si falla la detección.</span>
-                            </label>
-                            <p id="origin-display" class="font-semibold text-gray-800 text-sm truncate">Esperando ubicación o clic en mapa...</p>
-                        </div>
-                    </div>
-                    <!-- Indicador y Campo de Destino con Autocompletado -->
-                    <div class="space-y-2 p-3 bg-red-50 rounded-lg border-2 border-red-200 relative">
-                        <div class="flex items-center space-x-3">
-                            <i data-lucide="map-pin" class="w-5 h-5 text-red-600 flex-shrink-0"></i>
-                            <div class="flex-grow">
-                                <label for="destination-address" class="text-xs font-medium text-red-600">Destino (Escribe y selecciona)</label>
-                                <input type="text" id="destination-address" placeholder="Ej: Av. Argentina 500" class="w-full font-semibold text-gray-800 text-sm bg-red-50 focus:outline-none focus:bg-white focus:ring-1 focus:ring-red-500 rounded p-1">
-                                <span id="destination-coords" class="text-xs text-red-500 hidden"></span>
-                            </div>
-                        </div>
-                        <!-- Contenedor de Sugerencias de Autocompletado (CRÍTICO: z-index alto) -->
-                        <div id="autocomplete-suggestions" class="absolute z-30 w-full bg-white border border-gray-300 rounded-xl shadow-xl mt-1 left-0 right-0 max-h-48 overflow-y-auto hidden">
-                            <!-- Sugerencias se inyectan aquí -->
-                        </div>
-                        <!-- Mensaje de Distancia y Validación -->
-                        <p id="distance-message" class="text-xs font-medium text-gray-600 pl-8 pt-2">Ingresa un destino para verificar la distancia.</p>
-                    </div>
-                    <!-- Botón de Pedido -->
-                    <button id="request-trip-btn" disabled class="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-indigo-500 text-white font-bold rounded-xl shadow-md disabled:bg-indigo-300 hover:bg-indigo-600 transition duration-150">
-                        <i data-lucide="send" class="w-5 h-5"></i>
-                        <span>Esperando Origen y Destino</span>
-                    </button>
-                </div>
-            </div>
-        </main>
-    </div>
+// Variables globales proporcionadas por el entorno (MANDATORIO)
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'client-app-id';
+// FIX: Corregido el typo en el nombre de la variable de referencia
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-    <!-- Carga de Leaflet JS (se carga al final para asegurar el DOM) -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20n63W4ai0B8n7zL8dE5P5wzJbuvjt+YF6r7o/qBCV0=" crossorigin=""></script>
+// Helper para parsear la configuración de Firebase de forma segura
+const safeParseConfig = () => {
+    if (typeof __firebase_config === 'string' && __firebase_config.trim() !== '') {
+        try {
+            return JSON.parse(__firebase_config);
+        } catch (e) {
+            console.error("Error al parsear la configuración de Firebase:", e);
+            return {};
+        }
+    }
+    return {};
+};
+const firebaseConfig = safeParseConfig();
+
+
+// --- CONFIGURACIÓN DE TOMTOM ---
+// Clave de TomTom proporcionada por el usuario
+const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT"; 
+const COUNTRY_CODE = 'ARG'; // Asumimos Argentina por el contexto del proyecto
+
+// Estado simulado del cliente (para demostrar la funcionalidad)
+const DEFAULT_CLIENT_NAME = 'Juan Pérez';
+const DEFAULT_CLIENT_PHONE = '+54 9 11 1234 5678';
+const DEFAULT_FARE = '$ 2500 ARS'; // Tarifa simulada
+
+// --- UTILS DE FIREBASE Y ESTADO DE LA APP ---
+const initialAppState = {
+  db: null,
+  auth: null,
+  userId: null,
+  isAuthReady: false,
+};
+
+// Componente principal de la aplicación del Cliente
+const App = () => {
+  const [app, setApp] = useState(initialAppState);
+  const [loading, setLoading] = useState(true);
+  
+  // Datos del formulario
+  const [pickup, setPickup] = useState('Avenida Corrientes 800, Buenos Aires');
+  const [dropoff, setDropoff] = useState('Obelisco, Buenos Aires');
+  const [clientName, setClientName] = useState(DEFAULT_CLIENT_NAME);
+  const [clientPhone, setClientPhone] = useState(DEFAULT_CLIENT_PHONE);
+  
+  // Estado de la solicitud de viaje
+  const [currentTripId, setCurrentTripId] = useState(null);
+  const [currentTripStatus, setCurrentTripStatus] = useState('IDLE'); // IDLE, PENDING, ACCEPTED, WAITING_PICKUP, EN_ROUTE, COMPLETED, CANCELLED
+  const [driverDetails, setDriverDetails] = useState(null);
+
+  // ESTADOS PARA EL AUTOCOMPLETADO DE TOMTOM
+  const [pickupSuggestions, setPickupSuggestions] = useState([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState([]);
+  const [isSearchingPickup, setIsSearchingPickup] = useState(false);
+  const [isSearchingDropoff, setIsSearchingDropoff] = useState(false);
+
+  // 1. Inicialización de Firebase y Autenticación
+  useEffect(() => {
+    try {
+      if (Object.keys(firebaseConfig).length === 0) {
+        console.error("Firebase configuration is missing or invalid. Check the config string.");
+        setLoading(false);
+        return;
+      }
+      
+      const firebaseApp = initializeApp(firebaseConfig);
+      const dbInstance = getFirestore(firebaseApp);
+      const authInstance = getAuth(firebaseApp);
+
+      setApp(prev => ({ ...prev, db: dbInstance, auth: authInstance }));
+
+      const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+        if (user) {
+          const userId = user.uid;
+          setApp(prev => ({ ...prev, userId, isAuthReady: true }));
+          console.log(`[Client] Authenticated. User ID: ${userId}`);
+        } else {
+          try {
+            if (initialAuthToken) {
+              await signInWithCustomToken(authInstance, initialAuthToken);
+            } else {
+              await signInAnonymously(authInstance);
+            }
+          } catch (e) {
+            console.error("[Client] Error during authentication:", e);
+          } finally {
+             const tempUserId = authInstance.currentUser?.uid || crypto.randomUUID();
+             setApp(prev => ({ ...prev, userId: tempUserId, isAuthReady: true }));
+          }
+        }
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.error("[Client] Failed to initialize Firebase:", e);
+      setLoading(false);
+    }
+  }, [initialAuthToken]); // Se añade initialAuthToken como dependencia para consistencia
+
+  // --- FUNCIÓN DE BÚSQUEDA DE SUGERENCIAS TOMTOM ---
+  const fetchSuggestions = useCallback(async (query, setSuggestions, setLoading) => {
+    if (TOMTOM_API_KEY === "YOUR_TOMTOM_API_KEY_AQUI" || !query || query.length < 3) {
+        setSuggestions([]);
+        return;
+    }
     
-    <!-- Script Principal de la Aplicación y Lógica del Mapa -->
-    <script type="module">
-        // Importaciones de Firebase 
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    setLoading(true);
 
-        // Distancia máxima de cobertura del servicio en kilómetros
-        const MAX_DISTANCE_KM = 60; 
+    // Lógica de reintento con backoff exponencial
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const encodedQuery = encodeURIComponent(query);
+            // TomTom Search API (Fuzzy Search) - Limitamos a 5 resultados
+            const apiUrl = `https://api.tomtom.com/search/2/search/${encodedQuery}.json?key=${TOMTOM_API_KEY}&countrySet=${COUNTRY_CODE}&limit=5`;
 
-        // CRÍTICO: Corrección del "rombo" de Leaflet con Data URI (SVG simple)
-        if (typeof L !== 'undefined' && L.Icon) {
-            delete L.Icon.Default.prototype._getIconUrl;
-            const dataUriSvg = 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="transparent"/></svg>`);
-            L.Icon.Default.mergeOptions({
-                iconUrl: dataUriSvg,
-                iconRetinaUrl: dataUriSvg,
-                shadowUrl: dataUriSvg,
-            });
-        }
+            const response = await fetch(apiUrl);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-        let map;
-        let originMarker;
-        let destinationMarker;
-        let currentPosition = null; // { lat, lng }
-        let destinationCoords = null; // { lat, lng }
-        let destinationAddress = '';
+            const data = await response.json();
+            
+            const suggestions = data.results
+                ? data.results.map(result => result.address.freeformAddress)
+                : [];
+            
+            setSuggestions(suggestions);
+            setLoading(false);
+            return; // Éxito, salimos de la función
 
-        // Global Firebase instances and status
-        let db = null;
-        let auth = null;
-        let isFirebaseReady = false; 
-
-        function displayMessage(message, type = 'info') {
-            const statusDiv = document.getElementById('status-message');
-            statusDiv.textContent = message;
-            statusDiv.className = 'px-4 py-3 font-semibold text-center text-sm border-b shadow-sm';
-
-            statusDiv.classList.remove('bg-red-100', 'text-red-800', 'border-red-200', 'bg-green-100', 'text-green-800', 'border-green-200', 'bg-indigo-100', 'text-indigo-800', 'border-indigo-200');
-
-            if (type === 'error') {
-                statusDiv.classList.add('bg-red-100', 'text-red-800', 'border-red-200');
-            } else if (type === 'success') {
-                statusDiv.classList.add('bg-green-100', 'text-green-800', 'border-green-200');
-            } else { // info / default
-                statusDiv.classList.add('bg-indigo-100', 'text-indigo-800', 'border-indigo-200');
+        } catch (error) {
+            console.error(`[TomTom API] Intento ${attempt + 1} fallido:`, error);
+            if (attempt < 2) {
+                const delay = Math.pow(2, attempt) * 1000;
+                await new Promise(res => setTimeout(res, delay));
+            } else {
+                setSuggestions(['Error de conexión. Intente una búsqueda más específica.']);
+                setLoading(false);
             }
         }
+    }
+  }, []); // Dependencias vacías para useCallback
 
-        const initializeFirebase = async () => {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-            
-            if (!firebaseConfigRaw) {
-                console.warn("Firebase: Configuración NO encontrada. Funciones DB deshabilitadas.");
-                displayMessage("⚠️ Mapa cargando. Base de datos (pedidos) desactivada. (Falta Configuración)", 'error');
-                isFirebaseReady = false;
-                return;
-            }
+  // --- EFECTOS DE DEBOUNCE PARA AUTOCOMPLETADO ---
+  
+  // Debounce para Origen
+  useEffect(() => {
+    const handler = setTimeout(() => {
+        fetchSuggestions(pickup, setPickupSuggestions, setIsSearchingPickup);
+    }, 500); // Espera 500ms después de que el usuario deja de escribir
 
-            try {
-                const firebaseConfig = JSON.parse(firebaseConfigRaw);
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+    return () => clearTimeout(handler);
+  }, [pickup, fetchSuggestions]);
 
-                console.log("Firebase: Inicialización exitosa.");
-                isFirebaseReady = true;
-            } catch (error) {
-                console.error("Firebase Initialization Error:", error);
-                displayMessage("⚠️ Error al conectar la base de datos. Pedidos deshabilitados.", 'error');
-                isFirebaseReady = false;
-            } finally {
-                updateRequestButton();
-            }
-        };
+  // Debounce para Destino
+  useEffect(() => {
+    const handler = setTimeout(() => {
+        fetchSuggestions(dropoff, setDropoffSuggestions, setIsSearchingDropoff);
+    }, 500); // Espera 500ms después de que el usuario deja de escribir
 
-        window.savePedidoToFirestore = async function(pedidoData) {
-            if (!isFirebaseReady || !auth || !auth.currentUser) {
-                displayMessage("Error: La base de datos no está disponible. No se pudo enviar el pedido.", 'error');
-                return false;
-            }
-            
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    return () => clearTimeout(handler);
+  }, [dropoff, fetchSuggestions]);
 
-            try {
-                const collectionPath = `artifacts/${appId}/public/data/pedidos`;
-                await addDoc(collection(db, collectionPath), {
-                    ...pedidoData,
-                    userId: auth.currentUser.uid,
-                    createdAt: new Date().toISOString(),
-                    estado: "PENDIENTE"
-                });
-                return true;
-            } catch (e) {
-                console.error("Error guardando el pedido en Firestore: ", e);
-                displayMessage("Error al enviar el pedido. Intente de nuevo.", 'error');
-                return false;
-            }
-        };
 
-        function initMap() {
-            const mapElement = document.getElementById('map');
-            if (!mapElement || typeof L.map !== 'function') {
-                console.error("CRÍTICO: El elemento #map o la librería Leaflet no están disponibles.");
-                return;
-            }
+  // 2. Monitoreo de la solicitud de viaje activa
+  useEffect(() => {
+    if (!app.db || !currentTripId) return;
 
-            // Usamos un centro de mapa para Neuquén, Argentina por defecto
-            map = L.map('map').setView([-38.9517, -68.0617], 13); 
-            window.map = map;
+    // La solicitud de viaje está en la colección pública, monitoreamos los cambios
+    const tripRequestDocRef = doc(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests', currentTripId);
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-
-            const createCustomIcon = (color) => L.icon({
-                iconUrl: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 22 13.5 22 10.2A7.5 7.5 0 0 0 12 3a7.5 7.5 0 0 0-10 7.2c0 3.3 4.7 6.8 10 11.5z"/></svg>`),
-                iconSize: [32, 32],
-                iconAnchor: [16, 32],
-                popupAnchor: [0, -28]
+    const unsubscribe = onSnapshot(tripRequestDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        // Usar tripStatus si existe, sino el status principal
+        setCurrentTripStatus(data.tripStatus || data.status); 
+        
+        if (data.driverName) {
+            setDriverDetails({
+                name: data.driverName,
+                id: data.driverId,
             });
-
-            map.customIcons = {
-                origin: createCustomIcon('#3b82f6'), // Azul
-                destination: createCustomIcon('#ef4444') // Rojo
-            };
-
-            // Listener para la ubicación automática (Geolocation API)
-            map.on('locationfound', (e) => {
-                setOriginLocation(e.latlng, "Ubicación de Origen (Detectada)");
-            });
-
-            map.on('locationerror', (e) => {
-                console.warn("Error de geolocalización:", e.message);
-                const msg = isFirebaseReady ? "✅ DB OK. ERROR GPS. HAZ CLIC en el mapa para marcar tu origen." : "⚠️ DB Offline. ERROR GPS.";
-                displayMessage(msg, 'error');
-                document.getElementById('origin-display').textContent = "ERROR GPS: Clica en el mapa para establecer tu punto de recogida.";
-            });
-
-            // NUEVO: Listener para establecer el Origen manualmente con un click
-            map.on('click', (e) => {
-                setOriginLocation(e.latlng, "Ubicación de Origen (Manual)");
-                map.setView(e.latlng, 15); // Centrar en el punto seleccionado
-            });
-
-            // Función unificada para establecer el origen
-            function setOriginLocation(latlng, popupText) {
-                currentPosition = { lat: latlng.lat, lng: latlng.lng };
-
-                if (originMarker) {
-                    originMarker.setLatLng(latlng);
-                } else {
-                    originMarker = L.marker(latlng, { icon: map.customIcons.origin }).addTo(map);
-                }
-                originMarker.setPopupContent(popupText).openPopup();
-
-                reverseGeocode(latlng, 'origin-display', (address) => {
-                    document.getElementById('origin-display').textContent = address;
-                    updateRequestButton();
-                    if (destinationCoords) {
-                        checkDistanceAndValidate();
-                    }
-                });
-            }
-            
-            displayMessage("✅ Mapa inicializado. Buscando tu ubicación o espera tu clic...", 'success');
-        }
-
-        // --- FUNCIONES DE GEOCODIFICACIÓN Y DISTANCIA ---
-
-        /** Calcula la distancia Haversine en km entre dos puntos de Lat/Lng */
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Radio de la Tierra en kilómetros
-            const dLat = (lat2 - lat1) * (Math.PI / 180);
-            const dLon = (lon2 - lon1) * (Math.PI / 180);
-            const a = 
-                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c; // Distancia en km
-        }
-
-        /** Convierte coordenadas a dirección legible */
-        async function reverseGeocode(latlng, elementId, callback) {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`;
-            
-            try {
-                const response = await fetch(url, { headers: { 'User-Agent': 'TaxiDelValleApp' } });
-                const data = await response.json();
-                const address = data.display_name || `Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`;
-                callback(address);
-            } catch (error) {
-                callback(`Lat: ${latlng.lat.toFixed(4)}, Lon: ${latlng.lng.toFixed(4)}`);
-            }
         }
         
-        /** Busca direcciones (geocodificación) con prioridad en la vista actual */
-        async function fetchAutocompleteSuggestions(query) {
-            if (!query || query.length < 3) return [];
-            
-            let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=ar`;
+        console.log(`[Client] Trip Status Update: ${data.tripStatus || data.status}`);
 
-            // Si tenemos la posición actual, creamos un viewbox para priorizar resultados locales
-            if (currentPosition) {
-                // Definir un viewbox de 10km alrededor de la posición actual
-                const delta = 0.09; // Aproximadamente 10km en lat/lng
-                const lonMin = currentPosition.lng - delta;
-                const latMax = currentPosition.lat + delta;
-                const lonMax = currentPosition.lng + delta;
-                const latMin = currentPosition.lat - delta;
-                
-                // Nominatim viewbox format: [lon_min, lat_max, lon_max, lat_min]
-                const viewbox = `${lonMin},${latMax},${lonMax},${latMin}`;
-                url += `&viewbox=${viewbox}&bounded=1`; // Bounded=1 fuerza la búsqueda dentro del viewbox
-            }
-            
-            try {
-                const response = await fetch(url, { headers: { 'User-Agent': 'TaxiDelValleApp' } });
-                const data = await response.json();
-                
-                return data.map(item => ({
-                    address: item.display_name,
-                    lat: parseFloat(item.lat),
-                    lng: parseFloat(item.lon)
-                }));
-            } catch (error) {
-                console.error("Error fetching suggestions:", error);
-                return [];
-            }
+        // Manejar el final del viaje para resetear la vista
+        if (data.status === 'FINALIZED' || data.status === 'REJECTED_BY_DRIVER') {
+            // El usuario debe presionar un botón para resetear
         }
 
-        // --- LÓGICA DE AUTOCOMPLETADO Y UI ---
-
-        let geocodingTimeout;
-        const destinationInput = document.getElementById('destination-address');
-        const distanceMessage = document.getElementById('distance-message');
-        const suggestionsContainer = document.getElementById('autocomplete-suggestions');
-
-        // Evento de entrada con debounce para no saturar el API de Nominatim
-        destinationInput.addEventListener('input', () => {
-            clearTimeout(geocodingTimeout);
-            suggestionsContainer.classList.add('hidden');
-            destinationCoords = null; // Reiniciar coordenadas hasta que se seleccione una sugerencia
-            updateRequestButton();
-
-            if (destinationInput.value.length >= 3) {
-                geocodingTimeout = setTimeout(searchAndDisplaySuggestions, 300);
-            } else {
-                distanceMessage.textContent = "Ingresa al menos 3 caracteres para buscar destino.";
-            }
-        });
-
-        // Ocultar sugerencias al perder foco, a menos que el foco esté en la lista misma
-        document.addEventListener('click', (e) => {
-            if (!suggestionsContainer.contains(e.target) && e.target !== destinationInput) {
-                suggestionsContainer.classList.add('hidden');
-            }
-        });
-
-        async function searchAndDisplaySuggestions() {
-            const query = destinationInput.value;
-            if (query.length < 3) return;
-
-            distanceMessage.textContent = "Buscando direcciones cercanas...";
-            const results = await fetchAutocompleteSuggestions(query);
-
-            suggestionsContainer.innerHTML = '';
-
-            if (results.length > 0) {
-                results.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'suggestion-item text-sm text-gray-800 truncate';
-                    div.textContent = item.address;
-                    // Almacenar datos en el elemento para un manejo rápido
-                    div.dataset.lat = item.lat;
-                    div.dataset.lng = item.lon; // Usamos 'lon' de Nominatim
-                    div.dataset.address = item.address;
-
-                    div.addEventListener('click', () => selectSuggestion(div));
-                    suggestionsContainer.appendChild(div);
-                });
-                suggestionsContainer.classList.remove('hidden');
-            } else {
-                suggestionsContainer.classList.add('hidden');
-                distanceMessage.textContent = "No se encontraron resultados para esa búsqueda.";
-            }
+      } else {
+        // Si el documento es eliminado por alguna razón, se resetea
+        if (currentTripStatus !== 'IDLE') {
+            setCurrentTripStatus('CANCELLED'); // Forzar estado cancelado si se pierde la referencia
+            // Mantenemos currentTripId para mostrar el monitor de estado CANCELLED/REJECTED
         }
+      }
+    }, (error) => {
+      console.error("[Client] Error monitoring trip status:", error);
+    });
 
-        function selectSuggestion(element) {
-            destinationAddress = element.dataset.address;
-            destinationCoords = {
-                lat: parseFloat(element.dataset.lat),
-                lng: parseFloat(element.dataset.lng)
-            };
+    return () => unsubscribe();
+  }, [app.db, currentTripId, currentTripStatus]);
 
-            // 1. Rellenar el input y ocultar la lista
-            destinationInput.value = destinationAddress;
-            suggestionsContainer.classList.add('hidden');
-            document.getElementById('destination-coords').textContent = `${destinationCoords.lat.toFixed(4)}, ${destinationCoords.lng.toFixed(4)}`;
+  // Función para solicitar un viaje
+  const requestTrip = useCallback(async () => {
+    if (!app.db || currentTripStatus !== 'IDLE') return;
 
+    setCurrentTripStatus('PENDING');
 
-            // 2. Actualizar el mapa (si está inicializado)
-            if (map && map.customIcons) {
-                const latlng = L.latLng(destinationCoords.lat, destinationCoords.lng);
-                if (destinationMarker) {
-                    destinationMarker.setLatLng(latlng);
-                } else {
-                    destinationMarker = L.marker(latlng, { icon: map.customIcons.destination }).addTo(map)
-                        .bindPopup("Destino Seleccionado").openPopup();
-                }
-                map.panTo(latlng);
-            }
+    const requestsCollectionRef = collection(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests');
 
-            // 3. Validar distancia y actualizar botón
-            checkDistanceAndValidate();
-        }
+    const newTripData = {
+        clientId: app.userId,
+        clientName,
+        clientPhone,
+        pickup,
+        dropoff,
+        fare: DEFAULT_FARE,
+        status: 'PENDING', // Estado que el chofer monitorea
+        tripStatus: 'PENDING', // Estado de seguimiento del cliente
+        timestamp: Date.now(),
+    };
 
-        // --- LÓGICA DE VALIDACIÓN Y BOTÓN ---
+    try {
+        const docRef = await addDoc(requestsCollectionRef, newTripData);
+        setCurrentTripId(docRef.id);
+    } catch (e) {
+      console.error("[Client] Error creating trip request:", e);
+      setCurrentTripStatus('IDLE');
+    }
+  }, [app.db, app.userId, clientName, clientPhone, pickup, dropoff, currentTripStatus]);
+  
+  // Función para limpiar el estado después de un viaje finalizado/cancelado
+  const resetTrip = () => {
+      setCurrentTripId(null);
+      setCurrentTripStatus('IDLE');
+      setDriverDetails(null);
+  };
+  
+  // Función para cancelar el viaje (solo si está pendiente)
+  const cancelTrip = useCallback(async () => {
+      if (!app.db || !currentTripId || currentTripStatus !== 'PENDING') return;
 
-        function checkDistanceAndValidate() {
-            let isValid = false;
+      const tripRequestDocRef = doc(app.db, 'artifacts', appId, 'public', 'data', 'tripRequests', currentTripId);
+
+      try {
+          // Eliminamos el documento para que desaparezca de la cola del chofer
+          await deleteDoc(tripRequestDocRef);
+          setCurrentTripStatus('CANCELLED');
+          setCurrentTripId(null);
+      } catch (e) {
+           console.error("[Client] Error canceling trip:", e);
+      }
+  }, [app.db, currentTripId, currentTripStatus]);
+
+  // --- COMPONENTES DE VISTA ---
+  
+  const TripForm = () => (
+      <div className="space-y-4">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">Detalles del Viaje</h2>
+          
+          {/* Origen */}
+          <div className="relative z-10">
+              <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
+                  <MapPin size={20} className="text-blue-500 mr-3 flex-shrink-0" />
+                  <input 
+                      type="text" 
+                      placeholder="Origen (Dirección de Recogida)"
+                      value={pickup}
+                      onChange={(e) => {
+                          setPickup(e.target.value);
+                          setPickupSuggestions([]); // Limpiar sugerencias al escribir
+                      }}
+                      className="w-full bg-transparent outline-none text-gray-700 font-medium"
+                      required
+                  />
+                  {isSearchingPickup && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
+              </div>
+              
+              {/* Sugerencias de Origen */}
+              {pickupSuggestions.length > 0 && (
+                  <ul className="absolute w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                      {pickupSuggestions.map((suggestion, index) => (
+                          <li
+                              key={index}
+                              onClick={() => {
+                                  setPickup(suggestion);
+                                  setPickupSuggestions([]);
+                              }}
+                              className="p-3 text-sm text-gray-800 cursor-pointer hover:bg-blue-100 transition duration-150"
+                          >
+                              {suggestion}
+                          </li>
+                      ))}
+                  </ul>
+              )}
+          </div>
+          
+          {/* Destino */}
+          <div className="relative z-0">
+              <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
+                  <Target size={20} className="text-red-500 mr-3 flex-shrink-0" />
+                  <input 
+                      type="text" 
+                      placeholder="Destino"
+                      value={dropoff}
+                      onChange={(e) => {
+                          setDropoff(e.target.value);
+                          setDropoffSuggestions([]); // Limpiar sugerencias al escribir
+                      }}
+                      className="w-full bg-transparent outline-none text-gray-700 font-medium"
+                      required
+                  />
+                  {isSearchingDropoff && <Clock size={16} className="text-gray-400 animate-spin ml-2"/>}
+              </div>
+              
+              {/* Sugerencias de Destino */}
+              {dropoffSuggestions.length > 0 && (
+                  <ul className="absolute w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                      {dropoffSuggestions.map((suggestion, index) => (
+                          <li
+                              key={index}
+                              onClick={() => {
+                                  setDropoff(suggestion);
+                                  setDropoffSuggestions([]);
+                              }}
+                              className="p-3 text-sm text-gray-800 cursor-pointer hover:bg-red-100 transition duration-150"
+                          >
+                              {suggestion}
+                          </li>
+                      ))}
+                  </ul>
+              )}
+          </div>
+
+          <h2 className="text-xl font-bold text-gray-800 pt-4 mb-4 border-t border-gray-200">Tu Contacto</h2>
+          
+          {/* Nombre */}
+          <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
+              <User size={20} className="text-gray-500 mr-3 flex-shrink-0" />
+              <input 
+                  type="text" 
+                  placeholder="Tu Nombre"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="w-full bg-transparent outline-none text-gray-700 font-medium"
+                  required
+              />
+          </div>
+          
+          {/* Teléfono */}
+          <div className="flex items-center bg-gray-100 p-3 rounded-xl border border-gray-200">
+              <Phone size={20} className="text-gray-500 mr-3 flex-shrink-0" />
+              <input 
+                  type="tel" 
+                  placeholder="Teléfono de Contacto"
+                  value={clientPhone}
+                  onChange={(e) => setClientPhone(e.target.value)}
+                  className="w-full bg-transparent outline-none text-gray-700 font-medium"
+                  required
+              />
+          </div>
+          
+          {/* Tarifa Simulada */}
+          <div className="mt-6 p-4 bg-indigo-50 rounded-xl flex justify-between items-center">
+              <span className="text-lg font-bold text-indigo-700 flex items-center">
+                  <DollarSign size={20} className="mr-2"/> Tarifa Estimada
+              </span>
+              <span className="text-2xl font-extrabold text-indigo-800">{DEFAULT_FARE}</span>
+          </div>
+          
+          {/* Botón de Solicitud */}
+          <button
+              onClick={requestTrip}
+              disabled={currentTripStatus !== 'IDLE' || !pickup || !dropoff}
+              className={`w-full py-4 mt-6 rounded-xl font-bold text-white transition duration-300 transform hover:scale-[1.01] flex items-center justify-center ${
+                  currentTripStatus === 'IDLE' && pickup && dropoff
+                      ? 'bg-blue-600 hover:bg-blue-700 shadow-lg'
+                      : 'bg-gray-400 cursor-not-allowed'
+              }`}
+          >
+              <Car size={20} className="mr-2" />
+              {currentTripStatus === 'IDLE' ? 'Solicitar Viaje' : 'Viaje en Proceso...'}
+          </button>
+      </div>
+  );
+  
+  const StatusMonitor = () => {
+    let statusText = '';
+    let statusColor = 'bg-gray-500';
+    let icon = Clock;
+    let button = null;
+
+    switch (currentTripStatus) {
+        case 'PENDING':
+            statusText = 'Buscando Chofer...';
+            statusColor = 'bg-yellow-500';
+            icon = Clock;
+            button = (
+                <button
+                    onClick={cancelTrip}
+                    className="w-full py-2 mt-4 rounded-xl font-bold text-white bg-red-500 hover:bg-red-600 transition"
+                >
+                    Cancelar Solicitud
+                </button>
+            );
+            break;
+        case 'ACCEPTED':
+        case 'WAITING_PICKUP':
+            statusText = `Chofer Asignado: ${driverDetails?.name || 'Cargando...'}`;
+            statusColor = 'bg-indigo-600';
+            icon = Truck;
+            break;
+        case 'EN_ROUTE':
+            statusText = 'En Ruta a Destino';
+            statusColor = 'bg-green-600';
+            icon = Map; // Se corrigió a Map de lucide-react
+            break;
+        case 'FINALIZED':
+        case 'COMPLETED':
+            statusText = '¡Viaje Finalizado! Gracias.';
+            statusColor = 'bg-blue-600';
+            icon = CheckCircle;
+            button = (
+                <button
+                    onClick={resetTrip}
+                    className="w-full py-2 mt-4 rounded-xl font-bold text-white bg-blue-500 hover:bg-blue-600 transition"
+                >
+                    Nuevo Viaje
+                </button>
+            );
+            break;
+        case 'CANCELLED':
+        case 'REJECTED_BY_DRIVER':
+            statusText = 'Solicitud Cancelada/Rechazada. Intenta de nuevo.';
+            statusColor = 'bg-red-600';
+            icon = XCircle;
+            button = (
+                <button
+                    onClick={resetTrip}
+                    className="w-full py-2 mt-4 rounded-xl font-bold text-white bg-gray-500 hover:bg-gray-600 transition"
+                >
+                    Volver a Solicitar
+                </button>
+            );
+            break;
+        default:
+            return null; // Si es IDLE, no mostramos el monitor
+    }
+      
+    const CurrentIcon = icon;
+
+    return (
+        <div className="bg-white p-6 rounded-2xl shadow-2xl border-t-8 border-indigo-500 animate-pulse-fast">
+            <div className={`p-4 rounded-xl text-white font-bold text-center flex items-center justify-center mb-4 ${statusColor}`}>
+                <CurrentIcon size={24} className="mr-3"/>
+                <span className="text-lg">{statusText}</span>
+            </div>
             
-            if (currentPosition && destinationCoords) {
-                const distance = calculateDistance(
-                    currentPosition.lat, currentPosition.lng,
-                    destinationCoords.lat, destinationCoords.lng
-                );
-
-                if (distance <= MAX_DISTANCE_KM) {
-                    distanceMessage.textContent = `✅ Distancia: ${distance.toFixed(2)} km. Servicio Disponible.`;
-                    distanceMessage.classList.remove('text-red-600', 'text-gray-600');
-                    distanceMessage.classList.add('text-green-600');
-                    isValid = true;
-                } else {
-                    distanceMessage.textContent = `❌ Distancia (${distance.toFixed(2)} km) excede el límite de ${MAX_DISTANCE_KM} km.`;
-                    distanceMessage.classList.remove('text-green-600', 'text-gray-600');
-                    distanceMessage.classList.add('text-red-600');
-                    isValid = false;
-                }
-            } else if (currentPosition) {
-                distanceMessage.textContent = "Busca y selecciona un destino válido.";
-                distanceMessage.classList.remove('text-red-600', 'text-green-600');
-                distanceMessage.classList.add('text-gray-600');
-            }
+            {driverDetails && (currentTripStatus === 'ACCEPTED' || currentTripStatus === 'WAITING_PICKUP' || currentTripStatus === 'EN_ROUTE') && (
+                <div className="space-y-2 p-3 bg-gray-50 rounded-xl">
+                    <p className="text-sm font-semibold text-gray-700 flex items-center"><User size={16} className="mr-2 text-indigo-500"/> Chofer: {driverDetails.name}</p>
+                    <p className="text-xs text-gray-500 flex items-center"><Truck size={16} className="mr-2 text-indigo-500"/> ID: {driverDetails.id}</p>
+                </div>
+            )}
             
-            updateRequestButton(isValid);
-        }
-
-        function updateRequestButton(isDistanceValid = false) {
-            const btn = document.getElementById('request-trip-btn');
-            const isReadyToRequest = currentPosition && destinationCoords && isDistanceValid;
+            <div className="mt-4 space-y-2 text-sm text-gray-600">
+                <p className="flex items-center"><MapPin size={16} className="mr-2 text-blue-500"/> Origen: <span className="font-medium ml-1">{pickup}</span></p>
+                <p className="flex items-center"><Target size={16} className="mr-2 text-red-500"/> Destino: <span className="font-medium ml-1">{dropoff}</span></p>
+                <p className="flex items-center"><DollarSign size={16} className="mr-2 text-green-500"/> Tarifa: <span className="font-bold ml-1">{DEFAULT_FARE}</span></p>
+            </div>
             
-            if (isReadyToRequest) {
-                if (isFirebaseReady) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span> Solicitar Viaje Ahora</span>';
-                    btn.classList.replace('disabled:bg-indigo-300', 'bg-indigo-500');
-                    btn.classList.add('hover:bg-indigo-600');
-                } else {
-                    btn.disabled = true;
-                    btn.innerHTML = '<i data-lucide="x-circle" class="w-5 h-5"></i><span> DB Desactivada. Pedido NO disponible.</span>';
-                    btn.classList.add('disabled:bg-indigo-300');
-                    btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
-                }
-            } else {
-                btn.disabled = true;
-                if (!currentPosition) {
-                    btn.innerHTML = 'Establece tu Origen (Automático o Clic en el mapa)';
-                } else if (!destinationCoords || destinationInput.value.length < 3) {
-                    btn.innerHTML = 'Busca el Destino (mín. 3 letras)';
-                } else if (!isDistanceValid) {
-                     btn.innerHTML = 'Destino fuera del área de servicio (Max 60km)';
-                } else {
-                    btn.innerHTML = 'Esperando Origen y Destino';
-                }
-                
-                btn.classList.add('disabled:bg-indigo-300');
-                btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
-            }
-        }
+            {button}
+        </div>
+    );
+  };
+  
+  // Vista de Carga
+  if (loading || !app.isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-6 bg-white rounded-xl shadow-lg">
+          <div className="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4 mx-auto"></div>
+          <p className="text-gray-600 font-semibold">Cargando aplicación y autenticando...</p>
+        </div>
+        <style jsx="true">{`
+          .loader {
+            border-top-color: #3b82f6; 
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+          }
+          @-webkit-keyframes spinner { 0% { -webkit-transform: rotate(0deg); } 100% { -webkit-transform: rotate(360deg); } }
+          @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        `}</style>
+      </div>
+    );
+  }
 
-        // --- INICIALIZACIÓN ---
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeFirebase();
+  return (
+    <div className="min-h-screen bg-gray-50 font-[Inter] flex flex-col items-center p-4 sm:p-6">
+      <div className="w-full max-w-lg">
+        {/* Encabezado */}
+        <header className="text-center mb-6">
+          <Car size={40} className="text-indigo-600 mx-auto mb-2" />
+          <h1 className="text-3xl font-extrabold text-gray-900">Solicitar Viaje</h1>
+          <p className="text-sm text-gray-500 mt-1">ID Cliente: <span className="font-mono text-xs p-1 bg-gray-200 rounded">{app.userId}</span></p>
+        </header>
+        
+        {/* Contenido principal */}
+        <div className="p-6 bg-white rounded-2xl shadow-xl">
+            {currentTripStatus === 'IDLE' ? <TripForm /> : <StatusMonitor />}
+        </div>
+        
+        {/* Footer */}
+        <footer className="mt-10 text-center text-xs text-gray-400 p-4 border-t">
+            <p>Módulo de Cliente (Firebase Real-Time) | Geocodificación TomTom Integrada</p>
+        </footer>
+      </div>
+    </div>
+  );
+};
 
-            function checkAndInitMap() {
-                if (typeof L !== 'undefined' && typeof L.map === 'function') {
-                    
-                    initMap(); 
-
-                    // Mecanismo de forzado de redibujo para solucionar problemas de visibilidad en el iFrame
-                    const mapElement = document.getElementById('map');
-                    
-                    // Intento #1: requestAnimationFrame loop para forzar el redibujo
-                    const forceResize = () => {
-                        if (map && mapElement && (mapElement.offsetWidth === 0 || mapElement.offsetHeight === 0)) {
-                            requestAnimationFrame(forceResize);
-                        } else if (map) {
-                            map.invalidateSize({ pan: false });
-                            // Intentar la geolocalización una vez que el mapa es visible
-                            map.locate({ setView: true, maxZoom: 16 });
-                        }
-                    };
-                    requestAnimationFrame(forceResize);
-
-                    // Intento #2: Timeout final de respaldo
-                    setTimeout(() => {
-                        if(map) {
-                            map.invalidateSize({ pan: true });
-                        }
-                    }, 150);
-                    
-                } else {
-                    setTimeout(checkAndInitMap, 50); 
-                }
-            }
-            
-            checkAndInitMap();
-
-            document.getElementById('locate-me-btn').addEventListener('click', () => {
-                if (map) {
-                    displayMessage('Buscando ubicación actual...', 'info');
-                    map.locate({ setView: true, maxZoom: 16 });
-                }
-            });
-
-            document.getElementById('request-trip-btn').addEventListener('click', async () => {
-                const btn = document.getElementById('request-trip-btn');
-                if (btn.disabled) return;
-
-                // Re-validación final
-                if (!currentPosition || !destinationCoords) {
-                    displayMessage('Error: Faltan datos de Origen o Destino.', 'error');
-                    return;
-                }
-                
-                const distance = calculateDistance(
-                    currentPosition.lat, currentPosition.lng,
-                    destinationCoords.lat, destinationCoords.lng
-                );
-
-                if (distance > MAX_DISTANCE_KM) {
-                    displayMessage(`❌ El destino está fuera del área de servicio (${distance.toFixed(2)} km).`, 'error');
-                    return;
-                }
-
-                const pedidoData = {
-                    origen_lat: currentPosition.lat,
-                    origen_lng: currentPosition.lng,
-                    origen_address: document.getElementById('origin-display').textContent,
-                    destino_lat: destinationCoords.lat,
-                    destino_lng: destinationCoords.lng,
-                    destino_address: destinationAddress,
-                    distancia_km: distance.toFixed(2), 
-                    cliente_ref: auth?.currentUser?.uid || 'anonimo',
-                    timestamp: new Date().toISOString(),
-                };
-
-                const success = await window.savePedidoToFirestore(pedidoData);
-
-                if (success) {
-                    displayMessage('✅ ¡Pedido enviado con éxito! Buscando chofer...', 'success');
-                    btn.disabled = true;
-                    btn.innerHTML = 'Pedido Enviado. Esperando Asignación...';
-                }
-            });
-        });
-    </script>
-</body>
-</html>
+export default App;
