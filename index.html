@@ -93,11 +93,10 @@
         <!-- Formulario principal con ID para JS -->
         <form id="rideForm" class="space-y-4">
             
-            <!-- (NUEVO) Origen (Manual con Búsqueda) -->
+            <!-- Origen (Manual con Búsqueda) -->
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">1. Origen (Tú)</legend>
                 
-                <!-- Búsqueda de Origen -->
                 <div class="relative">
                     <label for="origen_search" class="block text-sm font-medium text-gray-700 mb-1">
                         Buscar Dirección de Origen <span class="text-red-500">*</span>
@@ -128,7 +127,6 @@
                     <input type="hidden" id="origen_lon" name="origen_lon">
                 </div>
 
-                <!-- Campo de Descripción Adicional -->
                 <div class="mt-4">
                     <label for="origen_description" class="block text-sm font-medium text-gray-700 mb-1">
                         Descripción de Ubicación (Ej: Frente al árbol)
@@ -147,7 +145,6 @@
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">2. Destino</legend>
 
-                <!-- Búsqueda de Destino -->
                 <div class="relative">
                     <label for="destino_search" class="block text-sm font-medium text-gray-700 mb-1">
                         Buscar Dirección de Destino <span class="text-red-500">*</span>
@@ -205,8 +202,6 @@
                     </select>
                 </div>
             </div>
-
-            <!-- CAMPO DE NOTAS/MALETEROS ELIMINADO -->
             
             <!-- Botón de Envío: Formato Taxi del Valle (No modificar) -->
             <button 
@@ -244,8 +239,8 @@
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
-        // Clave API de TomTom
-        const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT";
+        // (NUEVA) Clave API de TomTom
+        const TOMTOM_API_KEY = "Z22u8H0ZF80TlLq9c7b0nlXL2P3jESQZ";
 
         // Ubicación por defecto para centrar el mapa
         const DEFAULT_MAP_CENTER = [-58.3816, -34.6037]; // Buenos Aires [lon, lat]
@@ -338,21 +333,19 @@
         // --- 2. Mapa (TomTom) ---
         const initializeMap = () => {
             try {
-                // (NUEVO) Verificar si el contenedor del mapa existe ANTES de usarlo
                 const mapContainer = document.getElementById('map');
                 if (!mapContainer) {
                     console.error("Error fatal: El contenedor del mapa '#map' no se encontró en el DOM.");
-                    return; // Salir si no hay mapa
+                    return; 
                 }
                 
                 map = tt.map({
                     key: TOMTOM_API_KEY,
-                    container: mapContainer, // Usar la variable
+                    container: mapContainer,
                     center: DEFAULT_MAP_CENTER,
                     zoom: 12
                 });
                 
-                // Listener para seleccionar el destino en el mapa
                 map.on('click', (e) => {
                     const lat = e.lngLat.lat;
                     const lon = e.lngLat.lng;
@@ -360,11 +353,12 @@
                 });
             } catch (error) {
                 console.error("Error inicializando TomTom:", error);
-                showMessage("Error de Mapa", "No se pudo inicializar el mapa. Intenta recargar.", "...");
+                showMessage("Error de Mapa", `No se pudo inicializar el mapa. (Error: ${error.message})`, "...");
             }
         };
 
         const updateMapAndBounds = () => {
+            if (!map) return; // (NUEVO) No hacer nada si el mapa no se inicializó
             const bounds = new tt.LngLatBounds();
             
             if (originCoords) {
@@ -448,8 +442,7 @@
             try {
                 let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5`;
                 
-                // (NUEVO) Intenta obtener el centro del mapa SÓLO si el mapa ya se inicializó
-                if (map) {
+                if (map) { // Solo si el mapa está listo
                     const mapCenter = map.getCenter();
                     url += `&lon=${mapCenter.lng}&lat=${mapCenter.lat}`;
                 }
@@ -688,7 +681,11 @@
             if (typeof tt !== 'undefined' && tt.map && tt.services) {
                 console.log("SDK de TomTom cargado exitosamente.");
                 
+                // (NUEVO ORDEN)
+                // 1. Inicializar el mapa (se centra en DEFAULT)
                 initializeMap(); 
+                
+                // 2. Inicializar Firebase.
                 initializeFirebase();
 
             } else {
@@ -697,12 +694,12 @@
             }
         };
 
-        // (NUEVO) Iniciar la aplicación SÓLO cuando el DOM esté listo
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log("DOM listo. Empezando a esperar por el SDK de TomTom...");
-            waitForTomTomSDK();
-        });
-
+        // (NUEVA LÓGICA DE CARGA)
+        // El script de módulo se ejecuta después de que el DOM está parseado.
+        // Simplemente empezamos a "pollear" (preguntar) por el SDK de TomTom.
+        console.log("Script de módulo cargado. Empezando a esperar por el SDK de TomTom...");
+        waitForTomTomSDK();
+        
     </script>
 </body>
 </html>
