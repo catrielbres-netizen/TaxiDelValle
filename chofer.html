@@ -1,4 +1,4 @@
-   <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -58,10 +58,9 @@
     
     <script type="module">
         // === ¡CONFIGURACIÓN DE APPSHEET COMPLETA! ===
-        // Estas claves deben coincidir exactamente con las que usaste en cliente.html
         const APPSHEET_APP_ID = "24f8735e-447a-48cd-a503-7deb1149c3ba"; 
         const APPSHEET_ACCESS_KEY = "V2-R5pzi-2brtL-KObNl-nPiDe-GIxT9-4PiuP-l72L4-KrkOd"; 
-        const APPSHEET_TABLE_NAME = "Pedidos"; // Nombre de la tabla
+        const APPSHEET_TABLE_NAME = "Pedidos"; 
         // ---------------------------------------------------
 
         let APPSHEET_API_URL = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${APPSHEET_TABLE_NAME}/Action`;
@@ -88,7 +87,7 @@
         // --- Lógica Principal del Chofer ---
 
         /**
-         * Busca en AppSheet filas que coincidan con [status] = "pending"
+         * Busca en AppSheet filas que coincidan con [ESTADO] = "pending"
          */
         const fetchPendingRides = async () => {
             if (APPSHEET_APP_ID === "TU_APP_ID_AQUI" || !APPSHEET_APP_ID) {
@@ -113,8 +112,8 @@
                         "Action": "Find", // Acción para buscar filas
                         "Properties": {
                             "Locale": "es-ES",
-                            // Selector que filtra por pedidos con estado "pending"
-                            "Selector": `FILTER(Pedidos, [status] = "pending")` 
+                            // CRÍTICO: Usando [ESTADO] según las columnas proporcionadas.
+                            "Selector": `FILTER(Pedidos, [ESTADO] = "pending")` 
                         },
                         "Rows": [] 
                     })
@@ -126,13 +125,20 @@
                 }
 
                 const pendingRides = await response.json();
+                
+                // --- LOG DE DEPURACIÓN (Verifica si AppSheet está enviando datos) ---
+                console.log(`[DEBUG] Viajes recibidos desde AppSheet: ${pendingRides.length} filas.`);
+                if (pendingRides.length > 0) {
+                    console.log("[DEBUG] Primer viaje recibido:", pendingRides[0]);
+                }
+                // -----------------------------------------------------------------
+
                 connectionStatus.textContent = "Conectado. Esperando viajes.";
                 displayRides(pendingRides);
 
             } catch (error) {
-                // Aquí es donde se atrapa el error 403. Lo logueamos pero no lo lanzamos.
                 console.error("Error al buscar viajes:", error);
-                // Si el error es 403, mostramos un mensaje que le indica al usuario el problema de configuración.
+                
                 if (error.message.includes("403")) {
                     connectionStatus.textContent = "Error de Configuración (403). Habilita el API REST en AppSheet.";
                 } else {
@@ -148,37 +154,38 @@
             rideListContainer.innerHTML = ''; 
             
             if (!rides || rides.length === 0) {
-                // Si no hay viajes, muestra el mensaje de no viajes
                 noRidesMessage.classList.remove('hidden');
                 rideListContainer.appendChild(noRidesMessage); 
                 return;
             }
 
-            // Si hay viajes, oculta el mensaje
             noRidesMessage.classList.add('hidden');
             
             rides.forEach(ride => {
                 const card = document.createElement('div');
                 card.className = 'ride-card';
                 
-                // Muestra la información del pedido usando los nombres de columna de AppSheet
+                // Usando los nombres de columna proporcionados por el usuario
+                const origen = ride.ORIGEN_DIRECCION || (ride.ORIGEN_UBICACION ? 'Ubicación GPS' : 'Dirección no especificada');
+                const destino = ride.DESTINO_DIRECCION || (ride.DESTINO_UBICACION ? 'Ubicación GPS' : 'Dirección no especificada');
+                
                 card.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
-                        <h3 class="text-xl font-bold text-gray-900">${ride.estimated_price || '$?.??'}</h3>
-                        <span class="text-sm font-medium text-blue-600">${ride.estimated_time || '? min'}</span>
+                        <!-- Quitamos precio y tiempo estimados ya que no están en las columnas proporcionadas -->
+                        <h3 class="text-xl font-bold text-gray-900">Nuevo Viaje</h3>
                     </div>
                     <p class="text-sm text-gray-700 mb-1">
-                        <strong class="text-gray-900">Desde:</strong> ${ride.origen_address || 'Dirección no especificada'}
+                        <strong class="text-gray-900">Desde:</strong> ${origen}
                     </p>
                     <p class="text-sm text-gray-700 mb-3">
-                        <strong class="text-gray-900">Hasta:</strong> ${ride.destino_address || 'Dirección no especificada'}
+                        <strong class="text-gray-900">Hasta:</strong> ${destino}
                     </p>
                     <p class="text-sm text-gray-600 italic mb-4">
-                        "${ride.origen_description || 'Sin descripción adicional.'}"
+                        <strong class="text-gray-900">Comentarios:</strong> ${ride.COMENTARIOS_CLIENTE || 'Sin comentarios adicionales.'}
                     </p>
                     
                     <button 
-                        data-ride-id="${ride.ID_Pedido}" 
+                        data-ride-id="${ride.ID_PEDIDO}" 
                         class="w-full py-2 px-4 rounded-lg text-gray-900 font-semibold shadow-md btn-active"
                     >
                         Aceptar Viaje
@@ -200,7 +207,8 @@
          */
         const acceptRide = async (rideId) => {
             console.log(`Aceptando viaje: ${rideId}`);
-            const driverId = `CHOFER_${Math.random().toString(36).substring(2, 6)}`; // ID de chofer simulado
+            // Usamos un ID de chofer simulado, que podrías reemplazar con un ID de usuario real de Firebase si lo usaras
+            const driverId = `CHOFER_${Math.random().toString(36).substring(2, 6)}`; 
             
             try {
                  const response = await fetch(APPSHEET_API_URL, {
@@ -215,10 +223,10 @@
                         "Rows": [
                             {
                                 // Columna clave para identificar la fila a editar
-                                "ID_Pedido": rideId, 
-                                // Columnas a actualizar
-                                "status": "accepted", 
-                                "driver_id": driverId 
+                                "ID_PEDIDO": rideId, 
+                                // Columna de estado y chofer asignado (¡COINCIDENCIA DE MAYÚSCULAS CRÍTICA!)
+                                "ESTADO": "accepted", 
+                                "CHOFER_ASIGNADO_REF": driverId 
                             }
                         ]
                     })
