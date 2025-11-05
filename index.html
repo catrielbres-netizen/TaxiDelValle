@@ -4,56 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pedido de Taxi del Valle</title>
-    <!-- Incluye Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <style>
         /* --- FORMATO CONGELADO: NO MODIFICAR --- */
         body { font-family: 'Inter', sans-serif; }
-        
-        .btn-disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        .btn-active {
-            background-color: #FBBF24; /* Amber-400 */
-            color: #1F2937;
-            cursor: pointer;
-            opacity: 1;
-            transition: background-color 0.2s;
-        }
-        .btn-active:hover:not(:disabled) {
-             background-color: #F59E0B; /* Amber-500 */
-        }
-
-        /* Estilos para los resultados de búsqueda */
-        .search-results {
-            position: absolute;
-            width: 100%;
-            background: white;
-            border: 1px solid #ddd;
-            border-top: none;
-            z-index: 10;
-            max-height: 200px;
-            overflow-y: auto;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border-bottom-left-radius: 0.5rem;
-            border-bottom-right-radius: 0.5rem;
-        }
-        .result-item {
-            padding: 10px 12px;
-            cursor: pointer;
-            border-bottom: 1px solid #eee;
-            font-size: 0.9rem;
-        }
-        .result-item:hover {
-            background-color: #f5f5f5;
-        }
-        .result-item:last-child {
-            border-bottom: none;
-        }
-         /* --- FIN DE FORMATO CONGELADO --- */
+        .btn-disabled { background-color: #ccc; cursor: not-allowed; opacity: 0.6; }
+        .btn-active { background-color: #FBBF24; color: #1F2937; cursor: pointer; opacity: 1; transition: background-color 0.2s; }
+        .btn-active:hover:not(:disabled) { background-color: #F59E0B; }
+        .search-results { position: absolute; width: 100%; background: white; border: 1px solid #ddd; border-top: none; z-index: 10; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem; }
+        .result-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+        .result-item:hover { background-color: #f5f5f5; }
+        .result-item:last-child { border-bottom: none; }
+        /* --- FIN DE FORMATO CONGELADO --- */
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 flex items-start justify-center">
@@ -65,110 +27,57 @@
             <h1 class="text-3xl font-extrabold text-center text-gray-900">
                 Taxi del Valle
             </h1>
-            <!-- Párrafos de Conexión y ID de Firebase ELIMINADOS -->
         </header>
         
         <h2 class="text-xl font-bold text-gray-900 mb-4 text-center">
             Completa tu Origen y Destino
         </h2>
 
-        <!-- Formulario principal (Congelado) -->
+        <!-- Formulario (Congelado) -->
         <form id="rideForm" class="space-y-4">
             
-            <!-- Origen (Manual con Búsqueda) (Congelado) -->
+            <!-- Origen -->
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">1. Origen (Tú)</legend>
-                
                 <div class="relative">
-                    <label for="origen_search" class="block text-sm font-medium text-gray-700 mb-1">
-                        Buscar Dirección de Origen (en Rawson) <span class="text-red-500">*</span>
-                    </label>
-                    <input 
-                        type="text" 
-                        id="origen_search" 
-                        placeholder="Escribe tu calle, altura o lugar..."
-                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500"
-                    >
+                    <label for="origen_search" class="block text-sm font-medium text-gray-700 mb-1">Buscar Dirección de Origen (en Rawson) <span class="text-red-500">*</span></label>
+                    <input type="text" id="origen_search" placeholder="Escribe tu calle, altura o lugar..." class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500">
                     <div id="origen_results" class="search-results hidden"></div>
                 </div>
-
                 <div class="mt-4">
-                    <label for="origen" class="block text-sm font-medium text-gray-700 mb-1">
-                        Origen Seleccionado (de la Búsqueda)
-                    </label>
-                    <input 
-                        type="text" 
-                        id="origen" 
-                        name="origen" 
-                        disabled 
-                        required
-                        placeholder="Busca tu dirección de origen..."
-                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100"
-                    >
+                    <label for="origen" class="block text-sm font-medium text-gray-700 mb-1">Origen Seleccionado</label>
+                    <input type="text" id="origen" name="origen" disabled required placeholder="Busca tu dirección de origen..." class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100">
                     <input type="hidden" id="origen_lat" name="origen_lat">
                     <input type="hidden" id="origen_lon" name="origen_lon">
                 </div>
-
                 <div class="mt-4">
-                    <label for="origen_description" class="block text-sm font-medium text-gray-700 mb-1">
-                        Descripción de Ubicación (Ej: Frente al árbol)
-                    </label>
-                    <input 
-                        type="text" 
-                        id="origen_description" 
-                        name="origen_description" 
-                        placeholder="Detalles para que el chofer te ubique fácilmente."
-                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500"
-                    >
+                    <label for="origen_description" class="block text-sm font-medium text-gray-700 mb-1">Descripción de Ubicación (Ej: Frente al árbol)</label>
+                    <input type="text" id="origen_description" name="origen_description" placeholder="Detalles para que el chofer te ubique fácilmente." class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500">
                 </div>
             </fieldset>
 
-            <!-- Destino (Selección en Mapa O Búsqueda) (Congelado) -->
+            <!-- Destino -->
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">2. Destino</legend>
-
                 <div class="relative">
-                    <label for="destino_search" class="block text-sm font-medium text-gray-700 mb-1">
-                        Buscar Dirección de Destino <span class="text-red-500">*</span>
-                    </label>
-                    <input 
-                        type="text" 
-                        id="destino_search" 
-                        placeholder="Escribe una calle, altura o lugar..."
-                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500"
-                    >
+                    <label for="destino_search" class="block text-sm font-medium text-gray-700 mb-1">Buscar Dirección de Destino <span class="text-red-500">*</span></label>
+                    <input type="text" id="destino_search" placeholder="Escribe una calle, altura o lugar..." class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500">
                     <div id="destino_results" class="search-results hidden"></div>
                 </div>
-
                 <div class="mt-4">
-                    <label for="destino" class="block text-sm font-medium text-gray-700 mb-1">
-                        Destino Seleccionado (del Mapa o Búsqueda)
-                    </label>
-                    <input 
-                        type="text" 
-                        id="destino" 
-                        name="destino" 
-                        required 
-                        disabled 
-                        placeholder="Busca una dirección..."
-                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100"
-                    >
+                    <label for="destino" class="block text-sm font-medium text-gray-700 mb-1">Destino Seleccionado</label>
+                    <input type="text" id="destino" name="destino" required disabled placeholder="Busca una dirección..." class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100">
                     <input type="hidden" id="destino_lat" name="destino_lat">
                     <input type="hidden" id="destino_lon" name="destino_lon">
                 </div>
             </fieldset>
             
-            <!-- Estimación de Viaje (Congelado) -->
+            <!-- Estimación (Congelado) -->
             <div id="estimationBox" class="bg-blue-100 p-4 rounded-lg shadow-inner hidden">
                 <h3 class="font-bold text-lg text-blue-800 mb-2">Estimación del Viaje</h3>
-                <p class="text-sm text-gray-700">
-                    <strong class="text-blue-600">Tiempo Estimado:</strong> <span id="estimatedTime" class="font-medium">--</span>
-                </p>
-                <p class="text-sm text-gray-700">
-                    <strong class="text-blue-600">Precio Estimado:</strong> <span id="estimatedPrice" class="font-medium text-xl">--</span>
-                </p>
+                <p class="text-sm text-gray-700"><strong class="text-blue-600">Tiempo Estimado:</strong> <span id="estimatedTime" class="font-medium">--</span></p>
+                <p class="text-sm text-gray-700"><strong class="text-blue-600">Precio Estimado:</strong> <span id="estimatedPrice" class="font-medium text-xl">--</span></p>
             </div>
-
 
             <!-- Campos Opcionales (Congelado) -->
             <div class="flex space-x-4">
@@ -186,90 +95,66 @@
             </div>
             
             <!-- Botón de Envío (Congelado) -->
-            <button 
-                type="submit" 
-                id="submitButton" 
-                disabled 
-                class="w-full mt-6 py-3 px-4 rounded-lg text-gray-900 font-semibold shadow-xl transition duration-200 ease-in-out btn-disabled"
-            >
+            <button type="submit" id="submitButton" disabled class="w-full mt-6 py-3 px-4 rounded-lg text-gray-900 font-semibold shadow-xl transition duration-200 ease-in-out btn-disabled">
                 <span id="buttonText">Selecciona Origen y Destino</span>
             </button>
         </form>
     </div>
 
-    <!-- Contenedor para mensajes (Modal) (Congelado) -->
+    <!-- Modal de Mensajes (Congelado) -->
     <div id="messageBox" class="fixed inset-0 bg-gray-800 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-        <div id="messageContent" class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full text-center">
-            <!-- El contenido se inyecta con JS -->
-        </div>
+        <div id="messageContent" class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full text-center"></div>
     </div>
     
-    <!-- Imports de Firebase ELIMINADOS -->
-
     <script type="module">
-        // Lógica de la aplicación SIN FIREBASE
-        
-        // Clave API de TomTom (Congelada)
+        // === CONFIGURACIÓN DE APIS ===
         const TOMTOM_API_KEY = "Z22u8H0ZF80TlLq9c7b0nlXL2P3jESQZ";
+        
+        // --- ¡CONFIGURACIÓN DE APPSHEET COMPLETA! ---
+        const APPSHEET_APP_ID = "24f8735e-447a-48cd-a503-7deb1149c3ba"; // <-- ¡ID Actualizado!
+        const APPSHEET_ACCESS_KEY = "V2-R5pzi-2brtL-KObNl-nPiDe-GIxT9-4PiuP-l72L4-KrkOd"; // <-- ¡Clave Actualizada!
+        const APPSHEET_TABLE_NAME = "Pedidos"; // Asegúrate que este sea el nombre exacto de tu tabla
+        // ---------------------------------------------------
 
-        // Coordenadas de Rawson, Chubut para priorizar búsqueda
+        let APPSHEET_API_URL = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${APPSHEET_TABLE_NAME}/Action`;
+
         const RAWSON_COORDS = { lat: -43.3002, lon: -65.1023 };
         
-        // Estado Global (simplificado)
         let originCoords = null; 
         let destinationCoords = null; 
         
         // === REFERENCIAS DEL DOM (Congeladas) ===
-        // Referencias a authStatus y userIdDisplay ELIMINADAS
         const form = document.getElementById('rideForm');
         const submitButton = document.getElementById('submitButton');
         const buttonText = document.getElementById('buttonText');
-        
         const origenSearchInput = document.getElementById('origen_search');
         const origenResultsContainer = document.getElementById('origen_results');
         const origenInput = document.getElementById('origen');
         const origenLatInput = document.getElementById('origen_lat');
         const origenLonInput = document.getElementById('origen_lon');
-        
         const destinoSearchInput = document.getElementById('destino_search');
         const destinoResultsContainer = document.getElementById('destino_results');
         const destinoInput = document.getElementById('destino');
         const destinoLatInput = document.getElementById('destino_lat');
         const destinoLonInput = document.getElementById('destino_lon');
-
         const estimationBox = document.getElementById('estimationBox');
         const estimatedTime = document.getElementById('estimatedTime');
         const estimatedPrice = document.getElementById('estimatedPrice');
         
         // --- Utilidades (Congelado) ---
-        const showMessage = (title, text, icon) => {
+        const showMessage = (title, text, isError = false) => {
             document.getElementById('messageContent').innerHTML = `
-                ${icon || ''}
-                <h2 class="text-xl font-bold mt-3 text-gray-900">${title}</h2>
+                <h2 class="text-xl font-bold mt-3 ${isError ? 'text-red-600' : 'text-gray-900'}">${title}</h2>
                 <p class="text-gray-600 mt-2">${text}</p>
                 <button onclick="window.closeMessage()" class="mt-4 py-2 px-4 bg-amber-500 text-gray-900 font-semibold rounded-lg hover:bg-amber-600 transition">Aceptar</button>
             `;
             document.getElementById('messageBox').classList.remove('hidden');
             document.getElementById('messageBox').classList.add('flex');
         };
-
-        window.closeMessage = () => {
-            document.getElementById('messageBox').classList.add('hidden');
-            document.getElementById('messageBox').classList.remove('flex');
-        };
-
-        const debounce = (func, delay) => {
-            let timeout;
-            return (...args) => {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), delay);
-            };
-        };
+        window.closeMessage = () => { document.getElementById('messageBox').classList.add('hidden'); document.getElementById('messageBox').classList.remove('flex'); };
+        const debounce = (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; };
         
-        // --- Inicialización de Firebase ELIMINADA ---
-        
-        // --- 2. Lógica de Búsqueda (Sin Mapa) ---
-
+        // --- Lógica de Búsqueda (Congelada) ---
         const setOrigin = (coords, address) => {
             originCoords = coords;
             origenLatInput.value = coords.lat;
@@ -277,10 +162,8 @@
             origenInput.value = address; 
             origenSearchInput.value = ''; 
             origenResultsContainer.classList.add('hidden');
-            
             calculateRouteAndEstimate();
         };
-        
         const setDestination = (coords, address) => {
             destinationCoords = coords;
             destinoLatInput.value = coords.lat;
@@ -288,172 +171,97 @@
             destinoInput.value = address;
             destinoSearchInput.value = ''; 
             destinoResultsContainer.classList.add('hidden');
-            
             calculateRouteAndEstimate();
         };
-
-        
         const searchTomTomApi = async (query) => {
             try {
                 let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5&lat=${RAWSON_COORDS.lat}&lon=${RAWSON_COORDS.lon}&radius=50000`;
-                
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Respuesta de red no fue ok.');
                 return await response.json();
             } catch (error) {
-                console.warn("Error en API de Búsqueda, usando simulación:", error);
-                // Simulación como fallback si la API de TomTom falla
-                return { 
-                    results: [
-                        { address: { freeformAddress: 'Av. 9 de Julio 100, Rawson (Simulado)' }, position: { lat: -43.3000, lon: -65.1000 } },
-                        { address: { freeformAddress: 'Calle Falsa 123, Rawson (Simulado)' }, position: { lat: -43.3010, lon: -65.1020 } },
-                    ]
-                };
+                console.warn("Error en API de Búsqueda TomTom:", error);
+                return { results: [] }; 
             }
         };
-
-        const handleOriginSearch = async () => {
-            const query = origenSearchInput.value;
-            if (query.length < 3) {
-                origenResultsContainer.classList.add('hidden');
-                return;
-            }
-            const data = await searchTomTomApi(query);
-            if (data && data.results) displaySearchResults(data.results, origenResultsContainer, setOrigin);
-            else origenResultsContainer.classList.add('hidden');
-        };
-
-        const handleDestinationSearch = async () => {
-            const query = destinoSearchInput.value;
-            if (query.length < 3) {
-                destinoResultsContainer.classList.add('hidden');
-                return;
-            }
-            const data = await searchTomTomApi(query);
-            if (data && data.results) displaySearchResults(data.results, destinoResultsContainer, setDestination);
-            else destinoResultsContainer.classList.add('hidden');
-        };
-
+        const handleOriginSearch = async () => { const q = origenSearchInput.value; if (q.length < 3) { origenResultsContainer.classList.add('hidden'); return; } const d = await searchTomTomApi(q); if (d && d.results) displaySearchResults(d.results, origenResultsContainer, setOrigin); else origenResultsContainer.classList.add('hidden'); };
+        const handleDestinationSearch = async () => { const q = destinoSearchInput.value; if (q.length < 3) { destinoResultsContainer.classList.add('hidden'); return; } const d = await searchTomTomApi(q); if (d && d.results) displaySearchResults(d.results, destinoResultsContainer, setDestination); else destinoResultsContainer.classList.add('hidden'); };
         const displaySearchResults = (results, container, selectCallback) => {
             container.innerHTML = '';
-            if (results.length === 0) {
-                container.classList.add('hidden');
-                return;
-            }
-            
+            if (results.length === 0) { container.classList.add('hidden'); return; }
             results.forEach(result => {
                 const item = document.createElement('div');
                 item.className = 'result-item';
                 item.textContent = result.address.freeformAddress;
-                
                 item.dataset.lat = result.position.lat;
                 item.dataset.lon = result.position.lon;
                 item.dataset.address = result.address.freeformAddress;
-
                 item.addEventListener('click', () => {
-                    selectCallback(
-                        { lat: parseFloat(item.dataset.lat), lon: parseFloat(item.dataset.lon) }, 
-                        item.dataset.address
-                    );
+                    selectCallback({ lat: parseFloat(item.dataset.lat), lon: parseFloat(item.dataset.lon) }, item.dataset.address);
                 });
-                
                 container.appendChild(item);
             });
-            
             container.classList.remove('hidden');
         };
 
-        // --- Lógica de Estimación y Envío (Congelada) ---
-        
+        // --- Lógica de Estimación (Congelada) ---
         const calculateRouteAndEstimate = async () => {
-            if (!originCoords || !destinationCoords) {
-                estimationBox.classList.add('hidden');
-                checkButtonState();
-                return;
-            }
-            
+            if (!originCoords || !destinationCoords) { estimationBox.classList.add('hidden'); checkButtonState(); return; }
             estimationBox.classList.remove('hidden');
-            estimatedTime.textContent = 'Calculando...';
-            estimatedPrice.textContent = 'Calculando...';
-            
+            estimatedTime.textContent = 'Calculando...'; estimatedPrice.textContent = 'Calculando...';
             try {
                 const locations = `${originCoords.lon},${originCoords.lat}:${destinationCoords.lon},${destinationCoords.lat}`;
                 const url = `https://api.tomtom.com/routing/1/calculateRoute/${locations}/json?key=${TOMTOM_API_KEY}&computeBestOrder=false&travelMode=taxi`;
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Respuesta de red no fue ok.');
-                
                 const data = await response.json();
-                
                 if (data.routes && data.routes.length > 0) {
                     const route = data.routes[0].summary;
                     const distanceMeters = route.lengthInMeters;
                     const timeSeconds = route.travelTimeInSeconds;
-                    
                     const distanceKm = distanceMeters / 1000;
-                    const basePrice = 500.00; 
-                    const ratePerKm = 150.00; 
+                    const basePrice = 500.00; const ratePerKm = 150.00; 
                     const finalPrice = (basePrice + (distanceKm * ratePerKm)).toFixed(2);
-                    
                     const timeMinutes = Math.ceil(timeSeconds / 60);
                     const timeString = `${timeMinutes} min`;
-                    
                     estimatedTime.textContent = timeString;
                     estimatedPrice.textContent = `$${finalPrice}`;
-
-                } else {
-                    throw new Error("No se encontraron rutas.");
-                }
-
+                } else { throw new Error("No se encontraron rutas."); }
             } catch (error) {
                 console.warn("Error en API de Rutas, usando simulación:", error);
                 const finalPrice = (Math.random() * 1000 + 500).toFixed(2);
                 const timeString = `${Math.floor(Math.random() * 15 + 5)} min`;
-                
-                estimatedTime.textContent = timeString;
-                estimatedPrice.textContent = `$${finalPrice}`;
+                estimatedTime.textContent = timeString; estimatedPrice.textContent = `$${finalPrice}`;
             }
-            
             checkButtonState();
         };
         
-        
+        // --- Lógica de Botón (Congelada) ---
         const checkButtonState = () => {
             const isOriginSet = !!originCoords;
             const isDestinationSet = !!destinationCoords;
-            const isPriceCalculated = estimatedPrice.textContent !== '--' && !estimatedPrice.textContent.includes('Calculando');
-            
-            // Lógica de validación SIN currentUserId
+            const isPriceCalculated = estimatedTime.textContent !== '--' && !estimatedTime.textContent.includes('Calculando');
             const isValid = isOriginSet && isDestinationSet && isPriceCalculated;
-            
             submitButton.disabled = !isValid;
-            
             if (isValid) {
-                submitButton.classList.remove('btn-disabled');
-                submitButton.classList.add('btn-active');
+                submitButton.classList.remove('btn-disabled'); submitButton.classList.add('btn-active');
                 buttonText.textContent = `Pedir Taxi - ${estimatedPrice.textContent}`;
             } else {
-                submitButton.classList.remove('btn-active');
-                submitButton.classList.add('btn-disabled');
-                
-                if (!isOriginSet) {
-                    buttonText.textContent = 'Escribe tu dirección de origen';
-                } else if (!isDestinationSet) {
-                    buttonText.textContent = 'Selecciona o busca un destino';
-                } else if (!isPriceCalculated) {
-                    buttonText.textContent = 'Calculando precio...';
-                } else {
-                    buttonText.textContent = 'Completa la información';
-                }
+                submitButton.classList.remove('btn-active'); submitButton.classList.add('btn-disabled');
+                if (!isOriginSet) { buttonText.textContent = 'Escribe tu dirección de origen'; }
+                else if (!isDestinationSet) { buttonText.textContent = 'Selecciona o busca un destino'; }
+                else if (!isPriceCalculated) { buttonText.textContent = 'Calculando precio...'; }
+                else { buttonText.textContent = 'Completa la información'; }
             }
         };
 
-
-        // (NUEVO) --- Función de Envío SIMULADA ---
+        // --- Función de Envío a APPSHEET (Congelada) ---
         const handleSubmit = async (e) => {
             e.preventDefault(); 
+            if (submitButton.disabled) { showMessage("Error", "Asegúrate de tener un origen y un destino seleccionado.", true); return; }
             
-            if (submitButton.disabled) {
-                showMessage("Error", "Asegúrate de tener un origen y un destino seleccionado.", "...");
+            if (APPSHEET_APP_ID === "TU_APP_ID_AQUI" || !APPSHEET_APP_ID) {
+                showMessage("Error de Configuración", "La app no está conectada a AppSheet. Falta el APP_ID del desarrollador.", true);
                 return;
             }
             
@@ -461,83 +269,72 @@
             buttonText.textContent = 'Enviando Solicitud...';
             submitButton.classList.add('opacity-70', 'animate-pulse');
 
-            // --- SIMULACIÓN DE RED ---
-            // Esto reemplaza la llamada a Firebase (addDoc)
-            await new Promise(resolve => setTimeout(resolve, 1500)); 
-            // -------------------------
+            APPSHEET_API_URL = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${APPSHEET_TABLE_NAME}/Action`;
 
+            const newRowData = {
+                "ID_Pedido": `id_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`, 
+                "origen_lat": originCoords.lat,
+                "origen_lon": originCoords.lon,
+                "destino_lat": destinationCoords.lat,
+                "destino_lon": destinationCoords.lon,
+                "origen_address": origenInput.value,
+                "origen_description": document.getElementById('origen_description').value,
+                "destino_address": destinoInput.value,
+                "pasajeros": document.getElementById('pasajeros').value,
+                "pago_method": document.getElementById('pago').value,
+                "estimated_time": estimatedTime.textContent,
+                "estimated_price": estimatedPrice.textContent,
+                "status": "pending",
+                "createdAt": new Date().toISOString(),
+            };
+            
             try {
-                // Aquí iría la lógica para enviar a la API de AppSheet en el futuro.
-                // Por ahora, solo mostramos éxito.
-                
-                console.log("Datos del viaje (simulado):", {
-                    origen_lat: originCoords.lat,
-                    origen_lon: originCoords.lon,
-                    destino_lat: destinationCoords.lat,
-                    destino_lon: destinationCoords.lon,
-                    origen_address: origenInput.value,
-                    origen_description: document.getElementById('origen_description').value,
-                    destino_address: destinoInput.value,
-                    pasajeros: document.getElementById('pasajeros').value,
-                    pago_method: document.getElementById('pago').value,
-                    estimated_time: estimatedTime.textContent,
-                    estimated_price: estimatedPrice.textContent,
-                    status: 'pending'
+                const response = await fetch(APPSHEET_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'ApplicationAccessKey': APPSHEET_ACCESS_KEY
+                    },
+                    body: JSON.stringify({
+                        "Action": "Add", 
+                        "Properties": { "Locale": "es-ES" },
+                        "Rows": [ newRowData ] 
+                    })
                 });
-
-                showMessage("¡Pedido Enviado!", `Tu taxi está siendo buscado. Precio: ${estimatedPrice.textContent}. (Esto es una simulación).`, "...");
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error de AppSheet (${response.status}): ${errorText}`);
+                }
+                
+                showMessage("¡Pedido Enviado!", `Tu taxi está siendo buscado. Precio: ${estimatedPrice.textContent}.`);
                 
                 // Resetear UI
-                destinationCoords = null;
-                originCoords = null;
-                
-                origenInput.value = "";
-                origenSearchInput.value = "";
-                origenLatInput.value = "";
-                origenLonInput.value = "";
-
-                destinoInput.value = "";
-                destinoSearchInput.value = "";
-                destinoLatInput.value = "";
-                destinoLonInput.value = "";
-                
-                document.getElementById('origen_description').value = "";
-                document.getElementById('pasajeros').value = "1";
-
+                destinationCoords = null; originCoords = null;
+                origenInput.value = ""; origenSearchInput.value = ""; origenLatInput.value = ""; origenLonInput.value = "";
+                destinoInput.value = ""; destinoSearchInput.value = ""; destinoLatInput.value = ""; destinoLonInput.value = "";
+                document.getElementById('origen_description').value = ""; document.getElementById('pasajeros').value = "1";
                 estimationBox.classList.add('hidden');
                 
-                submitButton.classList.remove('opacity-70', 'animate-pulse');
-                
-                checkButtonState(); 
-
             } catch (error) {
-                console.error("Error al simular el pedido:", error);
+                console.error("Error al enviar el pedido a AppSheet:", error);
+                showMessage("Error de Envío", `Hubo un error al guardar tu pedido. Detalles: ${error.message}`, true);
+            } finally {
                 submitButton.classList.remove('opacity-70', 'animate-pulse');
-                checkButtonState();
-                showMessage("Error de Simulación", "Hubo un error al simular tu pedido. Intenta de nuevo.", "...");
+                checkButtonState(); 
             }
         };
 
-        
-        // --- Lógica de Carga (Simplificada) ---
-        
+        // --- Lógica de Carga (Congelada) ---
         document.addEventListener('DOMContentLoaded', () => {
-            console.log("DOM listo. App de cliente iniciada (Modo Simulación).");
-            
-            // Asignar listeners a los inputs de búsqueda
+            console.log("DOM listo. App de cliente iniciada (Modo API AppSheet).");
             origenSearchInput.addEventListener('input', debounce(handleOriginSearch, 350));
             destinoSearchInput.addEventListener('input', debounce(handleDestinationSearch, 350));
-
-            // Listener para cerrar popups de búsqueda
             document.addEventListener('click', (e) => {
                 if (e.target.id !== 'origen_search') origenResultsContainer.classList.add('hidden');
                 if (e.target.id !== 'destino_search') destinoResultsContainer.classList.add('hidden');
             });
-            
-            // Asignar listener al formulario
             form.addEventListener('submit', handleSubmit);
-            
-            // Asignar listener al campo de descripción (para revalidar el botón)
             document.getElementById('origen_description').addEventListener('input', checkButtonState);
         });
         
