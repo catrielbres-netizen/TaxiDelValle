@@ -7,20 +7,9 @@
     <!-- Incluye Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- SDK de TomTom (SOLO CSS) -->
-    <link rel="stylesheet" type="text-css" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.1/maps-sdk.css" />
-    
     <style>
         /* --- FORMATO CONGELADO: NO MODIFICAR --- */
         body { font-family: 'Inter', sans-serif; }
-        
-        #map {
-            height: 350px; 
-            width: 100%;
-            border-radius: 0.75rem; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            cursor: crosshair;
-        }
         
         .btn-disabled {
             background-color: #ccc;
@@ -76,19 +65,11 @@
             <h1 class="text-3xl font-extrabold text-center text-gray-900">
                 Taxi del Valle
             </h1>
-            <p id="authStatus" class="text-center text-sm mt-1 text-gray-700">
-                Conectando...
-            </p>
-            <p id="userIdDisplay" class="text-xs text-gray-700 mt-1 truncate text-center">
-                ID Cliente: ...
-            </p>
+            <!-- Párrafos de Conexión y ID de Firebase ELIMINADOS -->
         </header>
         
-        <!-- Contenedor del Mapa (Congelado) -->
-        <div id="map" class="mb-4"></div>
-
         <h2 class="text-xl font-bold text-gray-900 mb-4 text-center">
-            Selecciona tu Origen y Destino
+            Completa tu Origen y Destino
         </h2>
 
         <!-- Formulario principal (Congelado) -->
@@ -100,7 +81,7 @@
                 
                 <div class="relative">
                     <label for="origen_search" class="block text-sm font-medium text-gray-700 mb-1">
-                        Buscar Dirección de Origen <span class="text-red-500">*</span>
+                        Buscar Dirección de Origen (en Rawson) <span class="text-red-500">*</span>
                     </label>
                     <input 
                         type="text" 
@@ -169,7 +150,7 @@
                         name="destino" 
                         required 
                         disabled 
-                        placeholder="Haz clic en el mapa o busca una dirección..."
+                        placeholder="Busca una dirección..."
                         class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100"
                     >
                     <input type="hidden" id="destino_lat" name="destino_lat">
@@ -223,42 +204,23 @@
         </div>
     </div>
     
-    <!-- SDK de TomTom (JavaScript) -->
-    <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.1/maps-sdk.min.js"></script>
+    <!-- Imports de Firebase ELIMINADOS -->
 
-    <!-- Firebase Imports -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, updateDoc, collection, query, where, addDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Establecer nivel de log para depuración de Firestore
-        setLogLevel('Debug');
-
-        // === CONFIGURACIÓN GLOBAL ===
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Lógica de la aplicación SIN FIREBASE
         
-        // (NUEVA) Clave API de TomTom
+        // Clave API de TomTom (Congelada)
         const TOMTOM_API_KEY = "Z22u8H0ZF80TlLq9c7b0nlXL2P3jESQZ";
 
-        // Ubicación por defecto para centrar el mapa
-        const DEFAULT_MAP_CENTER = [-58.3816, -34.6037]; // Buenos Aires [lon, lat]
+        // Coordenadas de Rawson, Chubut para priorizar búsqueda
+        const RAWSON_COORDS = { lat: -43.3002, lon: -65.1023 };
         
-        // Estado Global
-        let firebaseApp, db, auth;
-        let currentUserId = null;
-        let map = null;
-        let originMarker = null;
-        let destinationMarker = null;
-
+        // Estado Global (simplificado)
         let originCoords = null; 
         let destinationCoords = null; 
         
-        // === REFERENCIAS DEL DOM ===
-        const authStatus = document.getElementById('authStatus');
-        const userIdDisplay = document.getElementById('userIdDisplay');
+        // === REFERENCIAS DEL DOM (Congeladas) ===
+        // Referencias a authStatus y userIdDisplay ELIMINADAS
         const form = document.getElementById('rideForm');
         const submitButton = document.getElementById('submitButton');
         const buttonText = document.getElementById('buttonText');
@@ -304,97 +266,9 @@
             };
         };
         
-        // --- 1. Inicialización de Firebase (Congelado) ---
-        const initializeFirebase = async () => {
-            if (!firebaseConfig) {
-                authStatus.textContent = 'Error: Configuración de Firebase no encontrada.';
-                return;
-            }
-            try {
-                firebaseApp = initializeApp(firebaseConfig);
-                db = getFirestore(firebaseApp);
-                auth = getAuth(firebaseApp);
-                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-                else await signInAnonymously(auth);
-            } catch (error) {
-                authStatus.textContent = `Error: Falló la inicialización.`;
-            }
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    currentUserId = user.uid;
-                    authStatus.textContent = 'Conectado. Listo para viajar.';
-                    userIdDisplay.textContent = `ID Cliente: ${currentUserId}`;
-                } else {
-                    authStatus.textContent = 'Desconectado.';
-                    currentUserId = null;
-                }
-            });
-        };
+        // --- Inicialización de Firebase ELIMINADA ---
         
-        // --- 2. Mapa (TomTom) (Lógica de inicialización corregida) ---
-        const initializeMap = () => {
-            try {
-                // (NUEVO) Añadido log y verificación extra
-                console.log("initializeMap: Intentando encontrar '#map'...");
-                const mapContainer = document.getElementById('map');
-                if (!mapContainer) {
-                    console.error("Error fatal: El contenedor del mapa '#map' no se encontró en el DOM.");
-                    showMessage("Error Crítico", "El contenedor del mapa no se encontró. Recarga la página.", "...");
-                    return; // Salir si no hay mapa
-                }
-                console.log("initializeMap: Contenedor '#map' encontrado. Creando mapa...");
-
-                map = tt.map({
-                    key: TOMTOM_API_KEY,
-                    container: mapContainer,
-                    center: DEFAULT_MAP_CENTER,
-                    zoom: 12
-                });
-                
-                console.log("initializeMap: Mapa creado exitosamente.");
-                
-                map.on('click', (e) => {
-                    const lat = e.lngLat.lat;
-                    const lon = e.lngLat.lng;
-                    setDestination({ lat, lon });
-                });
-            } catch (error) {
-                console.error("Error fatal durante la inicialización de TomTom:", error);
-                // (NUEVO) Mostrar error al usuario
-                showMessage("Error de Mapa", `No se pudo inicializar el mapa. (Error: ${error.message})`, "...");
-            }
-        };
-
-        // --- Lógica de Mapa y Búsqueda (Congelada) ---
-        
-        const updateMapAndBounds = () => {
-            if (!map) return;
-            const bounds = new tt.LngLatBounds();
-            
-            if (originCoords) {
-                const originLngLat = [originCoords.lon, originCoords.lat];
-                if (originMarker) originMarker.remove();
-                originMarker = new tt.Marker({ color: '#DC2626' }) 
-                    .setLngLat(originLngLat)
-                    .addTo(map);
-                bounds.extend(originLngLat);
-            }
-            
-            if (destinationCoords) {
-                const destLngLat = [destinationCoords.lon, destinationCoords.lat];
-                if (destinationMarker) destinationMarker.remove();
-                destinationMarker = new tt.Marker({ color: '#1E40AF' })
-                    .setLngLat(destLngLat)
-                    .addTo(map);
-                bounds.extend(destLngLat);
-            }
-            
-            if (originCoords || destinationCoords) {
-                if (!bounds.isEmpty()) {
-                    map.fitBounds(bounds, { padding: 80, duration: 500 });
-                }
-            }
-        };
+        // --- 2. Lógica de Búsqueda (Sin Mapa) ---
 
         const setOrigin = (coords, address) => {
             originCoords = coords;
@@ -404,66 +278,35 @@
             origenSearchInput.value = ''; 
             origenResultsContainer.classList.add('hidden');
             
-            updateMapAndBounds();
             calculateRouteAndEstimate();
         };
         
-        const setDestination = (coords, address = null) => {
+        const setDestination = (coords, address) => {
             destinationCoords = coords;
             destinoLatInput.value = coords.lat;
             destinoLonInput.value = coords.lon;
+            destinoInput.value = address;
             destinoSearchInput.value = ''; 
             destinoResultsContainer.classList.add('hidden');
-
-            updateMapAndBounds();
-
-            if (address) {
-                destinoInput.value = address;
-            } else {
-                destinoInput.value = "Buscando dirección...";
-                reverseGeocode(coords.lat, coords.lon, (foundAddress) => {
-                    destinoInput.value = foundAddress || `Destino seleccionado en (${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)})`;
-                });
-            }
             
             calculateRouteAndEstimate();
         };
 
-        const reverseGeocode = async (lat, lon, callback) => {
-            try {
-                const response = await fetch(`https://api.tomtom.com/search/2/reverseGeocode/${lat},${lon}.json?key=${TOMTOM_API_KEY}&radius=100`);
-                if (!response.ok) throw new Error('Respuesta de red no fue ok.');
-                const data = await response.json();
-                if (data.addresses && data.addresses.length > 0) {
-                    callback(data.addresses[0].address.freeformAddress);
-                } else {
-                    callback(`Coords: ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-                }
-            } catch (error) {
-                console.warn("Error en Reverse Geocode, usando simulación:", error);
-                callback(`Calle Falsa #123 (Simulado)`);
-            }
-        };
-        
         
         const searchTomTomApi = async (query) => {
             try {
-                let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5`;
-                
-                if (map) { 
-                    const mapCenter = map.getCenter();
-                    url += `&lon=${mapCenter.lng}&lat=${mapCenter.lat}`;
-                }
+                let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5&lat=${RAWSON_COORDS.lat}&lon=${RAWSON_COORDS.lon}&radius=50000`;
                 
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Respuesta de red no fue ok.');
                 return await response.json();
             } catch (error) {
                 console.warn("Error en API de Búsqueda, usando simulación:", error);
+                // Simulación como fallback si la API de TomTom falla
                 return { 
                     results: [
-                        { address: { freeformAddress: 'Av. Corrientes 1000, CABA (Simulado)' }, position: { lat: -34.6037, lon: -58.3816 } },
-                        { address: { freeformAddress: 'Calle Falsa 123, Springfield (Simulado)' }, position: { lat: -34.5986, lon: -58.3822 } },
+                        { address: { freeformAddress: 'Av. 9 de Julio 100, Rawson (Simulado)' }, position: { lat: -43.3000, lon: -65.1000 } },
+                        { address: { freeformAddress: 'Calle Falsa 123, Rawson (Simulado)' }, position: { lat: -43.3010, lon: -65.1020 } },
                     ]
                 };
             }
@@ -476,7 +319,7 @@
                 return;
             }
             const data = await searchTomTomApi(query);
-            if (data.results) displaySearchResults(data.results, origenResultsContainer, setOrigin);
+            if (data && data.results) displaySearchResults(data.results, origenResultsContainer, setOrigin);
             else origenResultsContainer.classList.add('hidden');
         };
 
@@ -487,7 +330,7 @@
                 return;
             }
             const data = await searchTomTomApi(query);
-            if (data.results) displaySearchResults(data.results, destinoResultsContainer, setDestination);
+            if (data && data.results) displaySearchResults(data.results, destinoResultsContainer, setDestination);
             else destinoResultsContainer.classList.add('hidden');
         };
 
@@ -520,14 +363,7 @@
             container.classList.remove('hidden');
         };
 
-        origenSearchInput.addEventListener('input', debounce(handleOriginSearch, 350));
-        destinoSearchInput.addEventListener('input', debounce(handleDestinationSearch, 350));
-
-        document.addEventListener('click', (e) => {
-            if (e.target.id !== 'origen_search') origenResultsContainer.classList.add('hidden');
-            if (e.target.id !== 'destino_search') destinoResultsContainer.classList.add('hidden');
-        });
-
+        // --- Lógica de Estimación y Envío (Congelada) ---
         
         const calculateRouteAndEstimate = async () => {
             if (!originCoords || !destinationCoords) {
@@ -586,6 +422,7 @@
             const isDestinationSet = !!destinationCoords;
             const isPriceCalculated = estimatedPrice.textContent !== '--' && !estimatedPrice.textContent.includes('Calculando');
             
+            // Lógica de validación SIN currentUserId
             const isValid = isOriginSet && isDestinationSet && isPriceCalculated;
             
             submitButton.disabled = !isValid;
@@ -610,14 +447,13 @@
             }
         };
 
-        document.getElementById('origen_description').addEventListener('input', checkButtonState);
 
-
+        // (NUEVO) --- Función de Envío SIMULADA ---
         const handleSubmit = async (e) => {
             e.preventDefault(); 
             
-            if (submitButton.disabled || !currentUserId) {
-                showMessage("Error", "Asegúrate de tener un origen, un destino seleccionado y estar conectado.", "...");
+            if (submitButton.disabled) {
+                showMessage("Error", "Asegúrate de tener un origen y un destino seleccionado.", "...");
                 return;
             }
             
@@ -625,11 +461,16 @@
             buttonText.textContent = 'Enviando Solicitud...';
             submitButton.classList.add('opacity-70', 'animate-pulse');
 
+            // --- SIMULACIÓN DE RED ---
+            // Esto reemplaza la llamada a Firebase (addDoc)
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
+            // -------------------------
+
             try {
-                const requestsCollectionRef = collection(db, `artifacts/${appId}/public/data/ride_requests`);
+                // Aquí iría la lógica para enviar a la API de AppSheet en el futuro.
+                // Por ahora, solo mostramos éxito.
                 
-                const requestData = {
-                    userId: currentUserId,
+                console.log("Datos del viaje (simulado):", {
                     origen_lat: originCoords.lat,
                     origen_lon: originCoords.lon,
                     destino_lat: destinationCoords.lat,
@@ -641,17 +482,12 @@
                     pago_method: document.getElementById('pago').value,
                     estimated_time: estimatedTime.textContent,
                     estimated_price: estimatedPrice.textContent,
-                    status: 'pending',
-                    createdAt: new Date().toISOString(),
-                };
+                    status: 'pending'
+                });
 
-                await addDoc(requestsCollectionRef, requestData);
-                
-                showMessage("¡Pedido Enviado!", `Tu taxi está siendo buscado. Precio: ${estimatedPrice.textContent}.`, "...");
+                showMessage("¡Pedido Enviado!", `Tu taxi está siendo buscado. Precio: ${estimatedPrice.textContent}. (Esto es una simulación).`, "...");
                 
                 // Resetear UI
-                if (destinationMarker) destinationMarker.remove();
-                if (originMarker) originMarker.remove();
                 destinationCoords = null;
                 originCoords = null;
                 
@@ -665,6 +501,9 @@
                 destinoLatInput.value = "";
                 destinoLonInput.value = "";
                 
+                document.getElementById('origen_description').value = "";
+                document.getElementById('pasajeros').value = "1";
+
                 estimationBox.classList.add('hidden');
                 
                 submitButton.classList.remove('opacity-70', 'animate-pulse');
@@ -672,35 +511,34 @@
                 checkButtonState(); 
 
             } catch (error) {
-                console.error("Error al enviar el pedido:", error);
+                console.error("Error al simular el pedido:", error);
                 submitButton.classList.remove('opacity-70', 'animate-pulse');
                 checkButtonState();
-                showMessage("Error de Envío", "Hubo un error al guardar tu pedido. Intenta de nuevo.", "...");
+                showMessage("Error de Simulación", "Hubo un error al simular tu pedido. Intenta de nuevo.", "...");
             }
         };
 
-        form.addEventListener('submit', handleSubmit);
         
+        // --- Lógica de Carga (Simplificada) ---
         
-        // --- (NUEVA LÓGICA DE CARGA) ---
-
-        const waitForTomTomSDK = () => {
-            if (typeof tt !== 'undefined' && tt.map && tt.services) {
-                console.log("SDK de TomTom cargado exitosamente.");
-                // Ahora que el SDK está listo, inicializamos todo
-                initializeMap(); 
-                initializeFirebase();
-            } else {
-                console.log("Esperando SDK de TomTom...");
-                setTimeout(waitForTomTomSDK, 100); // Reintentar en 100ms
-            }
-        };
-
-        // Esperar a que el HTML (DOM) esté 100% listo ANTES de hacer nada
         document.addEventListener('DOMContentLoaded', () => {
-            console.log("DOM listo. Empezando a esperar por el SDK de TomTom...");
-            // Ahora que el DOM está listo, empezamos a esperar el script
-            waitForTomTomSDK();
+            console.log("DOM listo. App de cliente iniciada (Modo Simulación).");
+            
+            // Asignar listeners a los inputs de búsqueda
+            origenSearchInput.addEventListener('input', debounce(handleOriginSearch, 350));
+            destinoSearchInput.addEventListener('input', debounce(handleDestinationSearch, 350));
+
+            // Listener para cerrar popups de búsqueda
+            document.addEventListener('click', (e) => {
+                if (e.target.id !== 'origen_search') origenResultsContainer.classList.add('hidden');
+                if (e.target.id !== 'destino_search') destinoResultsContainer.classList.add('hidden');
+            });
+            
+            // Asignar listener al formulario
+            form.addEventListener('submit', handleSubmit);
+            
+            // Asignar listener al campo de descripción (para revalidar el botón)
+            document.getElementById('origen_description').addEventListener('input', checkButtonState);
         });
         
     </script>
