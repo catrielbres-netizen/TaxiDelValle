@@ -93,20 +93,20 @@
         <!-- Formulario principal con ID para JS -->
         <form id="rideForm" class="space-y-4">
             
-            <!-- Origen (Geolocalización) -->
+            <!-- Origen (Geolocalización SIMULADA) -->
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">1. Origen (Tú)</legend>
                 
                 <div>
                     <label for="origen" class="block text-sm font-medium text-gray-700 mb-1">
-                        Tu Ubicación Actual (Auto-detectada)
+                        Tu Ubicación (Simulada para Pruebas)
                     </label>
                     <input 
                         type="text" 
                         id="origen" 
                         name="origen" 
                         disabled 
-                        placeholder="Obteniendo ubicación..."
+                        placeholder="Estableciendo ubicación simulada..."
                         class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100"
                     >
                     <input type="hidden" id="origen_lat" name="origen_lat">
@@ -192,19 +192,8 @@
                 </div>
             </div>
 
-            <div>
-                <label for="notas" class="block text-sm font-medium text-gray-700 mb-1">
-                    Notas Adicionales
-                </label>
-                <textarea 
-                    id="notas" 
-                    name="notas" 
-                    rows="2"
-                    placeholder="Ej: Necesito espacio para maletas."
-                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-amber-500 focus:border-amber-500 resize-none"
-                ></textarea>
-            </div>
-
+            <!-- CAMPO DE NOTAS/MALETEROS ELIMINADO -->
+            
             <!-- Botón de Envío: Formato Taxi del Valle (No modificar) -->
             <button 
                 type="submit" 
@@ -243,6 +232,13 @@
         
         // Clave API de TomTom
         const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT";
+
+        // --- (NUEVO) UBICACIÓN SIMULADA ---
+        // Usamos una ubicación fija para pruebas en computadoras de escritorio.
+        // (Ej: Obelisco, Buenos Aires)
+        const SIMULATED_ORIGIN_LAT = -34.6037;
+        const SIMULATED_ORIGIN_LON = -58.3816;
+        // ---
         
         // Estado Global
         let firebaseApp, db, auth;
@@ -339,54 +335,41 @@
         
         // --- 2. Geolocalización y Mapa (TomTom) ---
 
+        /**
+         * (NUEVO) Establece la ubicación del cliente usando una SIMULACIÓN.
+         */
         const getClientLocation = () => {
-            origenInput.value = "Obteniendo ubicación...";
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        originCoords = { lat, lon };
-                        
-                        origenLatInput.value = lat;
-                        origenLonInput.value = lon;
+            origenInput.value = "Estableciendo ubicación simulada...";
+            
+            // Simulación inmediata
+            const lat = SIMULATED_ORIGIN_LAT;
+            const lon = SIMULATED_ORIGIN_LON;
+            originCoords = { lat, lon };
+            
+            origenLatInput.value = lat;
+            origenLonInput.value = lon;
 
-                        if (map) {
-                            const coords = [lon, lat]; // TomTom [lon, lat]
-                            map.setCenter(coords);
-                            map.setZoom(14);
+            if (map) {
+                const coords = [lon, lat]; // TomTom [lon, lat]
+                map.setCenter(coords);
+                map.setZoom(14);
 
-                            if (originMarker) originMarker.remove();
-                            originMarker = new tt.Marker({ color: '#DC2626' }) // Rojo para Origen
-                                .setLngLat(coords)
-                                .addTo(map);
-                            
-                            reverseGeocode(lat, lon, (address) => {
-                                origenInput.value = address || "Ubicación detectada (coordenadas)";
-                            });
-                        }
-                        checkButtonState();
-                    },
-                    (error) => {
-                        console.warn("Error de Geolocalización:", error.message);
-                        origenInput.value = "Ubicación denegada o fallida.";
-                        const icon = `
-                            <svg class="mx-auto h-12 w-12 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            </svg>`;
-                        showMessage("Permiso Necesario", "Permite la geolocalización para establecer tu origen.", icon);
-                        checkButtonState();
-                    }
-                );
-            } else {
-                origenInput.value = "Geolocalización no soportada.";
-                checkButtonState();
+                if (originMarker) originMarker.remove();
+                originMarker = new tt.Marker({ color: '#DC2626' }) // Rojo para Origen
+                    .setLngLat(coords)
+                    .addTo(map);
+                
+                // Hacemos reverse geocode a la ubicación simulada para que tenga un nombre
+                reverseGeocode(lat, lon, (address) => {
+                    origenInput.value = address || "Ubicación Simulada (Obelisco)";
+                });
             }
+            checkButtonState();
         };
 
         const initializeMap = () => {
-            const defaultLocation = [-58.3816, -34.6037]; // Buenos Aires [lon, lat]
+            // Usamos la ubicación simulada como centro por defecto
+            const defaultLocation = [SIMULATED_ORIGIN_LON, SIMULATED_ORIGIN_LAT]; 
             
             try {
                 map = tt.map({
@@ -404,7 +387,7 @@
                     setDestination({ lat, lon });
                 });
 
-                // Obtener ubicación del cliente al cargar el mapa
+                // (NUEVO) Obtener ubicación SIMULADA al cargar el mapa
                 map.on('load', getClientLocation);
 
             } catch (error) {
@@ -473,7 +456,7 @@
         };
         
         
-        // --- 3. BÚSQUEDA DE DESTINO (NUEVO) ---
+        // --- 3. BÚSQUEDA DE DESTINO ---
         
         const handleDestinationSearch = async () => {
             const query = destinoSearchInput.value;
@@ -483,7 +466,7 @@
                 return;
             }
             
-            // Bias de búsqueda cerca del origen del cliente
+            // Bias de búsqueda cerca del origen (simulado)
             const biasLocation = originCoords ? `${originCoords.lon},${originCoords.lat}` : null;
 
             try {
@@ -535,7 +518,7 @@
 
                 item.addEventListener('click', () => {
                     setDestination(
-                        { lat: item.dataset.lat, lon: item.dataset.lon }, 
+                        { lat: parseFloat(item.dataset.lat), lon: parseFloat(item.dataset.lon) }, 
                         item.dataset.address
                     );
                 });
@@ -586,8 +569,8 @@
                     
                     // Cálculo del precio (Fijo: $5.00 base + $1.50 por kilómetro)
                     const distanceKm = distanceMeters / 1000;
-                    const basePrice = 5.00; // Tarifa base (simulada)
-                    const ratePerKm = 1.50; // Tarifa por km (simulada)
+                    const basePrice = 500.00; // Tarifa base (simulada, ej: $500 ARS)
+                    const ratePerKm = 150.00; // Tarifa por km (simulada, ej: $150 ARS)
                     const finalPrice = (basePrice + (distanceKm * ratePerKm)).toFixed(2);
                     
                     // Formato del tiempo
@@ -604,7 +587,7 @@
             } catch (error) {
                 console.warn("Error en API de Rutas, usando simulación:", error);
                 // Fallback a simulación
-                const finalPrice = (Math.random() * 10 + 5).toFixed(2); // Precio aleatorio entre 5 y 15
+                const finalPrice = (Math.random() * 1000 + 500).toFixed(2); // Precio aleatorio
                 const timeString = `${Math.floor(Math.random() * 15 + 5)} min`; // Tiempo aleatorio
                 
                 estimatedTime.textContent = timeString;
@@ -634,7 +617,7 @@
                 submitButton.classList.add('btn-disabled');
                 
                 if (!isOriginSet) {
-                    buttonText.textContent = 'Esperando ubicación de origen...';
+                    buttonText.textContent = 'Estableciendo origen...';
                 } else if (!isDestinationSet) {
                     buttonText.textContent = 'Selecciona o busca un destino';
                 } else if (!isPriceCalculated) {
@@ -679,7 +662,7 @@
                     destino_address: destinoInput.value,
                     pasajeros: document.getElementById('pasajeros').value,
                     pago_method: document.getElementById('pago').value,
-                    notas: document.getElementById('notas').value,
+                    // 'notas' fue eliminado
                     estimated_time: estimatedTime.textContent,
                     estimated_price: estimatedPrice.textContent,
                     status: 'pending', // Estado inicial para que el chofer lo vea
