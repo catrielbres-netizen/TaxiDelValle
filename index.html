@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pedido de Taxi del Valle</title>
     <!-- Incluye Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -247,7 +247,7 @@
         // Clave API de TomTom
         const TOMTOM_API_KEY = "qfiNAZGwcmXAFKdmxn9eggudv5Hw87tT";
 
-        // (NUEVO) Ubicación por defecto para centrar el mapa
+        // Ubicación por defecto para centrar el mapa
         const DEFAULT_MAP_CENTER = [-58.3816, -34.6037]; // Buenos Aires [lon, lat]
         
         // Estado Global
@@ -267,14 +267,12 @@
         const submitButton = document.getElementById('submitButton');
         const buttonText = document.getElementById('buttonText');
         
-        // (NUEVO) Referencias de Origen
         const origenSearchInput = document.getElementById('origen_search');
         const origenResultsContainer = document.getElementById('origen_results');
         const origenInput = document.getElementById('origen');
         const origenLatInput = document.getElementById('origen_lat');
         const origenLonInput = document.getElementById('origen_lon');
         
-        // Referencias de Destino
         const destinoSearchInput = document.getElementById('destino_search');
         const destinoResultsContainer = document.getElementById('destino_results');
         const destinoInput = document.getElementById('destino');
@@ -340,9 +338,16 @@
         // --- 2. Mapa (TomTom) ---
         const initializeMap = () => {
             try {
+                // (NUEVO) Verificar si el contenedor del mapa existe ANTES de usarlo
+                const mapContainer = document.getElementById('map');
+                if (!mapContainer) {
+                    console.error("Error fatal: El contenedor del mapa '#map' no se encontró en el DOM.");
+                    return; // Salir si no hay mapa
+                }
+                
                 map = tt.map({
                     key: TOMTOM_API_KEY,
-                    container: 'map',
+                    container: mapContainer, // Usar la variable
                     center: DEFAULT_MAP_CENTER,
                     zoom: 12
                 });
@@ -387,14 +392,13 @@
             }
         };
 
-        // (NUEVO) Setea el Origen
         const setOrigin = (coords, address) => {
             originCoords = coords;
             origenLatInput.value = coords.lat;
             origenLonInput.value = coords.lon;
-            origenInput.value = address; // Pone la dirección en el campo disabled
-            origenSearchInput.value = ''; // Limpia el input de búsqueda
-            origenResultsContainer.classList.add('hidden'); // Oculta resultados
+            origenInput.value = address; 
+            origenSearchInput.value = ''; 
+            origenResultsContainer.classList.add('hidden');
             
             updateMapAndBounds();
             calculateRouteAndEstimate();
@@ -443,9 +447,12 @@
         const searchTomTomApi = async (query) => {
             try {
                 let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5`;
-                // Damos prioridad a la ubicación del mapa si ya está centrada
-                const mapCenter = map.getCenter();
-                url += `&lon=${mapCenter.lng}&lat=${mapCenter.lat}`;
+                
+                // (NUEVO) Intenta obtener el centro del mapa SÓLO si el mapa ya se inicializó
+                if (map) {
+                    const mapCenter = map.getCenter();
+                    url += `&lon=${mapCenter.lng}&lat=${mapCenter.lat}`;
+                }
                 
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Respuesta de red no fue ok.');
@@ -461,7 +468,6 @@
             }
         };
 
-        // (NUEVO) Manejador para Búsqueda de Origen
         const handleOriginSearch = async () => {
             const query = origenSearchInput.value;
             if (query.length < 3) {
@@ -473,7 +479,6 @@
             else origenResultsContainer.classList.add('hidden');
         };
 
-        // Manejador para Búsqueda de Destino
         const handleDestinationSearch = async () => {
             const query = destinoSearchInput.value;
             if (query.length < 3) {
@@ -485,7 +490,6 @@
             else destinoResultsContainer.classList.add('hidden');
         };
 
-        // (NUEVO) Función genérica para mostrar resultados
         const displaySearchResults = (results, container, selectCallback) => {
             container.innerHTML = '';
             if (results.length === 0) {
@@ -515,11 +519,9 @@
             container.classList.remove('hidden');
         };
 
-        // Listeners para ambas búsquedas
         origenSearchInput.addEventListener('input', debounce(handleOriginSearch, 350));
         destinoSearchInput.addEventListener('input', debounce(handleDestinationSearch, 350));
 
-        // Ocultar resultados si se hace clic fuera
         document.addEventListener('click', (e) => {
             if (e.target.id !== 'origen_search') origenResultsContainer.classList.add('hidden');
             if (e.target.id !== 'destino_search') destinoResultsContainer.classList.add('hidden');
@@ -539,10 +541,8 @@
             estimatedPrice.textContent = 'Calculando...';
             
             try {
-                // LLAMADA REAL AL API DE RUTAS DE TOMTOM
                 const locations = `${originCoords.lon},${originCoords.lat}:${destinationCoords.lon},${destinationCoords.lat}`;
                 const url = `https://api.tomtom.com/routing/1/calculateRoute/${locations}/json?key=${TOMTOM_API_KEY}&computeBestOrder=false&travelMode=taxi`;
-
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Respuesta de red no fue ok.');
                 
@@ -600,7 +600,7 @@
                 submitButton.classList.add('btn-disabled');
                 
                 if (!isOriginSet) {
-                    buttonText.textContent = 'Escribe tu dirección de origen'; // (NUEVO)
+                    buttonText.textContent = 'Escribe tu dirección de origen';
                 } else if (!isDestinationSet) {
                     buttonText.textContent = 'Selecciona o busca un destino';
                 } else if (!isPriceCalculated) {
@@ -688,20 +688,21 @@
             if (typeof tt !== 'undefined' && tt.map && tt.services) {
                 console.log("SDK de TomTom cargado exitosamente.");
                 
-                // (NUEVO ORDEN)
-                // 1. Inicializar el mapa (se centra en DEFAULT)
                 initializeMap(); 
-                
-                // 2. Inicializar Firebase.
                 initializeFirebase();
 
             } else {
+                console.log("Esperando SDK de TomTom..."); // Log para depurar
                 setTimeout(waitForTomTomSDK, 100);
             }
         };
 
-        // Iniciar la aplicación
-        waitForTomTomSDK();
+        // (NUEVO) Iniciar la aplicación SÓLO cuando el DOM esté listo
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM listo. Empezando a esperar por el SDK de TomTom...");
+            waitForTomTomSDK();
+        });
+
     </script>
 </body>
 </html>
