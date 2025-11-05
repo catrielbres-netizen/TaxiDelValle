@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>Pedido de Taxi del Valle</title>
     <!-- Incluye Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -337,48 +337,45 @@
 
         /**
          * (NUEVO) Establece la ubicación del cliente usando una SIMULACIÓN.
+         * Esta función ahora es llamada PRIMERO, antes de inicializar el mapa.
          */
-        const getClientLocation = () => {
+        const setSimulatedLocation = () => {
             origenInput.value = "Estableciendo ubicación simulada...";
             
-            // Simulación inmediata
             const lat = SIMULATED_ORIGIN_LAT;
             const lon = SIMULATED_ORIGIN_LON;
-            originCoords = { lat, lon };
+            originCoords = { lat, lon }; // <-- DATO CRÍTICO ESTABLECIDO
             
             origenLatInput.value = lat;
             origenLonInput.value = lon;
 
-            if (map) {
-                const coords = [lon, lat]; // TomTom [lon, lat]
-                map.setCenter(coords);
-                map.setZoom(14);
+            // Hacemos reverse geocode INMEDIATAMENTE.
+            reverseGeocode(lat, lon, (address) => {
+                origenInput.value = address || "Ubicación Simulada (Obelisco)";
+            });
 
-                if (originMarker) originMarker.remove();
-                originMarker = new tt.Marker({ color: '#DC2626' }) // Rojo para Origen
-                    .setLngLat(coords)
-                    .addTo(map);
-                
-                // Hacemos reverse geocode a la ubicación simulada para que tenga un nombre
-                reverseGeocode(lat, lon, (address) => {
-                    origenInput.value = address || "Ubicación Simulada (Obelisco)";
-                });
-            }
+            // Actualizamos el estado del botón.
             checkButtonState();
         };
 
         const initializeMap = () => {
-            // Usamos la ubicación simulada como centro por defecto
-            const defaultLocation = [SIMULATED_ORIGIN_LON, SIMULATED_ORIGIN_LAT]; 
+            // (NUEVO) Usamos la ubicación simulada (que YA está en originCoords) como centro.
+            const defaultLocation = [originCoords.lon, originCoords.lat]; 
             
             try {
                 map = tt.map({
                     key: TOMTOM_API_KEY,
                     container: 'map',
                     center: defaultLocation,
-                    zoom: 12
+                    zoom: 14 // Hacemos más zoom
                 });
                 
+                // (NUEVO) Añadir el marcador de origen AHORA, no en 'load'
+                if (originMarker) originMarker.remove();
+                originMarker = new tt.Marker({ color: '#DC2626' }) // Rojo para Origen
+                    .setLngLat(defaultLocation)
+                    .addTo(map);
+
                 // Listener para seleccionar el destino en el mapa
                 map.on('click', (e) => {
                     const lat = e.lngLat.lat;
@@ -386,9 +383,8 @@
                     
                     setDestination({ lat, lon });
                 });
-
-                // (NUEVO) Obtener ubicación SIMULADA al cargar el mapa
-                map.on('load', getClientLocation);
+                
+                // map.on('load') ya no es necesario para la simulación.
 
             } catch (error) {
                 console.error("Error inicializando TomTom:", error);
@@ -710,8 +706,18 @@
         const waitForTomTomSDK = () => {
             if (typeof tt !== 'undefined' && tt.map && tt.services) {
                 console.log("SDK de TomTom cargado exitosamente.");
-                initializeMap();
+                
+                // --- (NUEVO ORDEN) ---
+                // 1. Establecer los datos de simulación PRIMERO.
+                setSimulatedLocation(); 
+                
+                // 2. Inicializar el mapa (que USARÁ la simulación).
+                initializeMap(); 
+                
+                // 3. Inicializar Firebase.
                 initializeFirebase();
+                // ---
+
             } else {
                 setTimeout(waitForTomTomSDK, 100);
             }
