@@ -11,7 +11,7 @@
     <link rel="stylesheet" type="text-css" href="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.1/maps-sdk.css" />
     
     <style>
-        /* No modificar este bloque de formato */
+        /* --- FORMATO CONGELADO: NO MODIFICAR --- */
         body { font-family: 'Inter', sans-serif; }
         
         #map {
@@ -64,13 +64,14 @@
         .result-item:last-child {
             border-bottom: none;
         }
+         /* --- FIN DE FORMATO CONGELADO --- */
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 flex items-start justify-center">
 
     <div id="appContainer" class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 md:p-8 mt-4">
 
-        <!-- Header: Formato Taxi del Valle (No modificar) -->
+        <!-- Header: Formato Taxi del Valle (Congelado) -->
         <header class="bg-amber-500 text-white p-4 rounded-lg mb-6 shadow-md">
             <h1 class="text-3xl font-extrabold text-center text-gray-900">
                 Taxi del Valle
@@ -83,17 +84,17 @@
             </p>
         </header>
         
-        <!-- Contenedor del Mapa -->
+        <!-- Contenedor del Mapa (Congelado) -->
         <div id="map" class="mb-4"></div>
 
         <h2 class="text-xl font-bold text-gray-900 mb-4 text-center">
             Selecciona tu Origen y Destino
         </h2>
 
-        <!-- Formulario principal con ID para JS -->
+        <!-- Formulario principal (Congelado) -->
         <form id="rideForm" class="space-y-4">
             
-            <!-- Origen (Manual con Búsqueda) -->
+            <!-- Origen (Manual con Búsqueda) (Congelado) -->
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">1. Origen (Tú)</legend>
                 
@@ -141,7 +142,7 @@
                 </div>
             </fieldset>
 
-            <!-- Destino (Selección en Mapa O Búsqueda) -->
+            <!-- Destino (Selección en Mapa O Búsqueda) (Congelado) -->
             <fieldset class="border p-4 rounded-lg">
                 <legend class="text-sm font-semibold text-gray-700 px-2">2. Destino</legend>
 
@@ -176,7 +177,7 @@
                 </div>
             </fieldset>
             
-            <!-- Estimación de Viaje -->
+            <!-- Estimación de Viaje (Congelado) -->
             <div id="estimationBox" class="bg-blue-100 p-4 rounded-lg shadow-inner hidden">
                 <h3 class="font-bold text-lg text-blue-800 mb-2">Estimación del Viaje</h3>
                 <p class="text-sm text-gray-700">
@@ -188,7 +189,7 @@
             </div>
 
 
-            <!-- Campos Opcionales -->
+            <!-- Campos Opcionales (Congelado) -->
             <div class="flex space-x-4">
                 <div class="w-1/2">
                     <label for="pasajeros" class="block text-sm font-medium text-gray-700 mb-1">Pasajeros</label>
@@ -203,7 +204,7 @@
                 </div>
             </div>
             
-            <!-- Botón de Envío: Formato Taxi del Valle (No modificar) -->
+            <!-- Botón de Envío (Congelado) -->
             <button 
                 type="submit" 
                 id="submitButton" 
@@ -215,7 +216,7 @@
         </form>
     </div>
 
-    <!-- Contenedor para mensajes (Modal) -->
+    <!-- Contenedor para mensajes (Modal) (Congelado) -->
     <div id="messageBox" class="fixed inset-0 bg-gray-800 bg-opacity-75 hidden items-center justify-center p-4 z-50">
         <div id="messageContent" class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full text-center">
             <!-- El contenido se inyecta con JS -->
@@ -252,8 +253,8 @@
         let originMarker = null;
         let destinationMarker = null;
 
-        let originCoords = null; // {lat, lon} del cliente
-        let destinationCoords = null; // {lat, lon} del destino seleccionado
+        let originCoords = null; 
+        let destinationCoords = null; 
         
         // === REFERENCIAS DEL DOM ===
         const authStatus = document.getElementById('authStatus');
@@ -278,7 +279,7 @@
         const estimatedTime = document.getElementById('estimatedTime');
         const estimatedPrice = document.getElementById('estimatedPrice');
         
-        // --- Utilidades ---
+        // --- Utilidades (Congelado) ---
         const showMessage = (title, text, icon) => {
             document.getElementById('messageContent').innerHTML = `
                 ${icon || ''}
@@ -303,7 +304,7 @@
             };
         };
         
-        // --- 1. Inicialización de Firebase y Autenticación ---
+        // --- 1. Inicialización de Firebase (Congelado) ---
         const initializeFirebase = async () => {
             if (!firebaseConfig) {
                 authStatus.textContent = 'Error: Configuración de Firebase no encontrada.';
@@ -330,15 +331,19 @@
             });
         };
         
-        // --- 2. Mapa (TomTom) ---
+        // --- 2. Mapa (TomTom) (Lógica de inicialización corregida) ---
         const initializeMap = () => {
             try {
+                // (NUEVO) Añadido log y verificación extra
+                console.log("initializeMap: Intentando encontrar '#map'...");
                 const mapContainer = document.getElementById('map');
                 if (!mapContainer) {
                     console.error("Error fatal: El contenedor del mapa '#map' no se encontró en el DOM.");
-                    return; 
+                    showMessage("Error Crítico", "El contenedor del mapa no se encontró. Recarga la página.", "...");
+                    return; // Salir si no hay mapa
                 }
-                
+                console.log("initializeMap: Contenedor '#map' encontrado. Creando mapa...");
+
                 map = tt.map({
                     key: TOMTOM_API_KEY,
                     container: mapContainer,
@@ -346,25 +351,30 @@
                     zoom: 12
                 });
                 
+                console.log("initializeMap: Mapa creado exitosamente.");
+                
                 map.on('click', (e) => {
                     const lat = e.lngLat.lat;
                     const lon = e.lngLat.lng;
                     setDestination({ lat, lon });
                 });
             } catch (error) {
-                console.error("Error inicializando TomTom:", error);
+                console.error("Error fatal durante la inicialización de TomTom:", error);
+                // (NUEVO) Mostrar error al usuario
                 showMessage("Error de Mapa", `No se pudo inicializar el mapa. (Error: ${error.message})`, "...");
             }
         };
 
+        // --- Lógica de Mapa y Búsqueda (Congelada) ---
+        
         const updateMapAndBounds = () => {
-            if (!map) return; // (NUEVO) No hacer nada si el mapa no se inicializó
+            if (!map) return;
             const bounds = new tt.LngLatBounds();
             
             if (originCoords) {
                 const originLngLat = [originCoords.lon, originCoords.lat];
                 if (originMarker) originMarker.remove();
-                originMarker = new tt.Marker({ color: '#DC2626' }) // Rojo
+                originMarker = new tt.Marker({ color: '#DC2626' }) 
                     .setLngLat(originLngLat)
                     .addTo(map);
                 bounds.extend(originLngLat);
@@ -373,7 +383,7 @@
             if (destinationCoords) {
                 const destLngLat = [destinationCoords.lon, destinationCoords.lat];
                 if (destinationMarker) destinationMarker.remove();
-                destinationMarker = new tt.Marker({ color: '#1E40AF' }) // Azul
+                destinationMarker = new tt.Marker({ color: '#1E40AF' })
                     .setLngLat(destLngLat)
                     .addTo(map);
                 bounds.extend(destLngLat);
@@ -436,13 +446,11 @@
         };
         
         
-        // --- 3. BÚSQUEDA DE DIRECCIONES ---
-        
         const searchTomTomApi = async (query) => {
             try {
                 let url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${TOMTOM_API_KEY}&language=es-ES&limit=5`;
                 
-                if (map) { // Solo si el mapa está listo
+                if (map) { 
                     const mapCenter = map.getCenter();
                     url += `&lon=${mapCenter.lng}&lat=${mapCenter.lat}`;
                 }
@@ -520,7 +528,6 @@
             if (e.target.id !== 'destino_search') destinoResultsContainer.classList.add('hidden');
         });
 
-        // --- 4. Estimación de Viaje ---
         
         const calculateRouteAndEstimate = async () => {
             if (!originCoords || !destinationCoords) {
@@ -547,8 +554,8 @@
                     const timeSeconds = route.travelTimeInSeconds;
                     
                     const distanceKm = distanceMeters / 1000;
-                    const basePrice = 500.00; // Tarifa base (simulada, ej: $500 ARS)
-                    const ratePerKm = 150.00; // Tarifa por km (simulada, ej: $150 ARS)
+                    const basePrice = 500.00; 
+                    const ratePerKm = 150.00; 
                     const finalPrice = (basePrice + (distanceKm * ratePerKm)).toFixed(2);
                     
                     const timeMinutes = Math.ceil(timeSeconds / 60);
@@ -573,8 +580,7 @@
             checkButtonState();
         };
         
-        // --- 5. Lógica de Validación y Envío ---
-
+        
         const checkButtonState = () => {
             const isOriginSet = !!originCoords;
             const isDestinationSet = !!destinationCoords;
@@ -675,30 +681,27 @@
 
         form.addEventListener('submit', handleSubmit);
         
-        // --- 6. Sistema de Carga del SDK (Solución al error de 'tt') ---
+        
+        // --- (NUEVA LÓGICA DE CARGA) ---
 
         const waitForTomTomSDK = () => {
             if (typeof tt !== 'undefined' && tt.map && tt.services) {
                 console.log("SDK de TomTom cargado exitosamente.");
-                
-                // (NUEVO ORDEN)
-                // 1. Inicializar el mapa (se centra en DEFAULT)
+                // Ahora que el SDK está listo, inicializamos todo
                 initializeMap(); 
-                
-                // 2. Inicializar Firebase.
                 initializeFirebase();
-
             } else {
-                console.log("Esperando SDK de TomTom..."); // Log para depurar
-                setTimeout(waitForTomTomSDK, 100);
+                console.log("Esperando SDK de TomTom...");
+                setTimeout(waitForTomTomSDK, 100); // Reintentar en 100ms
             }
         };
 
-        // (NUEVA LÓGICA DE CARGA)
-        // El script de módulo se ejecuta después de que el DOM está parseado.
-        // Simplemente empezamos a "pollear" (preguntar) por el SDK de TomTom.
-        console.log("Script de módulo cargado. Empezando a esperar por el SDK de TomTom...");
-        waitForTomTomSDK();
+        // Esperar a que el HTML (DOM) esté 100% listo ANTES de hacer nada
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM listo. Empezando a esperar por el SDK de TomTom...");
+            // Ahora que el DOM está listo, empezamos a esperar el script
+            waitForTomTomSDK();
+        });
         
     </script>
 </body>
